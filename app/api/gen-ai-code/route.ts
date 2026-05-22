@@ -5,9 +5,57 @@ import { db } from "@/lib/prisma";
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
 import type { Message, FileData } from "@/components/WorkspaceClient";
 
-// ─── Gemini client ────────────────────────────────────────────────────────────
-
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+// ─── SSE helper ───────────────────────────────────────────────────────────────
+
+function sseEvent(type: string, payload: unknown): string {
+  return `data: ${JSON.stringify({ type, ...(payload as object) })}\n\n`;
+}
+
+// ─── Extract short label from a Gemini thought chunk ─────────────────────────
+// Gemini thoughts often start with a bold heading like **Verify Config**
+// We extract that. If no bold heading, take the first sentence only.
+
+function extractThoughtLabel(text: string): string | null {
+  // Try to grab **bold heading** at the start
+  const boldMatch = text.match(/\*\*([^*]{4,60})\*\*/);
+  if (boldMatch) return boldMatch[1].trim();
+
+  // Fall back to first sentence (up to first . or \n), capped at 60 chars
+  const sentence = text.split(/[.\n]/)[0].trim();
+  if (sentence.length >= 8 && sentence.length <= 80) return sentence;
+
+  return null;
+}
+
+// ─── npm validation ───────────────────────────────────────────────────────────
+
+async function validateDependencies(
+  deps: Record<string, string>
+): Promise<Record<string, string>> {
+  const valid: Record<string, string> = {};
+  await Promise.all(
+    Object.entries(deps).map(async ([pkg, version]) => {
+      try {
+        const res = await fetch(`https://registry.npmjs.org/${pkg}/latest`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) valid[pkg] = version;
+      } catch {
+        // silently skip hallucinated packages
+      }
+    })
+  );
+  return valid;
+}
+
+// ─── History trimming ─────────────────────────────────────────────────────────
+
+function trimHistory(messages: Message[]): Message[] {
+  if (messages.length <= 10) return messages;
+  return [messages[0], ...messages.slice(-8)];
+}
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -35,208 +83,225 @@ RULES:
 9. Keep code clean, readable, and production-quality.
 10. If the user attaches an image, use it as a design reference and match the layout/style as closely as possible.`;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Gemini contents builder ──────────────────────────────────────────────────
 
-/**
- * Build the Gemini contents array from the conversation history.
- * Gemini uses "user" / "model" roles (not "assistant").
- */
-function buildContents(
-  messages: Message[],
-  fileData: FileData | null
-): Array<{
-  role: "user" | "model";
-  parts: Array<
-    { text: string } | { inlineData: { mimeType: string; data: string } }
-  >;
-}> {
-  const contents: Array<{
-    role: "user" | "model";
-    parts: Array<
-      { text: string } | { inlineData: { mimeType: string; data: string } }
-    >;
-  }> = [];
+function buildContents(messages: Message[], fileData: FileData | null) {
+  const trimmed = trimHistory(messages);
 
-  for (const msg of messages) {
+  return trimmed.map((msg, idx) => {
     const role = msg.role === "assistant" ? "model" : "user";
 
     if (msg.role === "user") {
-      const parts: Array<
-        { text: string } | { inlineData: { mimeType: string; data: string } }
-      > = [];
+      const parts: object[] = [];
 
-      // Attach image if present (Supabase public URL → fetch as base64)
-      // We pass the URL as text context since we can't fetch at build time;
-      // the model will use the URL description as context.
-      let textContent = msg.content;
+      let text = msg.content;
+
       if (msg.imageUrl) {
-        textContent = `[User attached an image: ${msg.imageUrl}]\n\n${msg.content}`;
+        text = `[The user has attached an image. Use this URL directly in the generated app where relevant (as img src, background-image, etc.): ${msg.imageUrl}]\n\n${text}`;
       }
 
-      // If this is the last user message and we have existing fileData, inject it
-      const isLast = msg === messages[messages.length - 1];
+      const isLast = idx === trimmed.length - 1;
       if (isLast && fileData) {
-        textContent +=
-          "\n\nHere is the current state of the project files for context:\n" +
+        text +=
+          "\n\nCurrent project files for context:\n" +
           JSON.stringify(fileData, null, 2);
       }
 
-      parts.push({ text: textContent });
-      contents.push({ role, parts });
-    } else {
-      // assistant message
-      contents.push({
-        role: "model",
-        parts: [{ text: msg.content }],
-      });
+      parts.push({ text });
+      return { role, parts };
     }
-  }
 
-  return contents;
+    return { role, parts: [{ text: msg.content }] };
+  });
 }
 
-// ─── Route Handler ────────────────────────────────────────────────────────────
+// ─── Route ────────────────────────────────────────────────────────────────────
+
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
-  try {
-    // 1. Auth
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return Response.json({ message: "Unauthorized" }, { status: 401 });
-    }
-
-    // 2. Parse body
-    const body = await request.json();
-    const {
-      workspaceId,
-      userId,
-      messages,
-      fileData,
-    }: {
-      workspaceId: string | null;
-      userId: string;
-      messages: Message[];
-      fileData: FileData | null;
-    } = body;
-
-    if (!messages || messages.length === 0) {
-      return Response.json(
-        { message: "No messages provided" },
-        { status: 400 }
-      );
-    }
-
-    // 3. Verify user & credits
-    const user = await db.user.findUnique({
-      where: { id: userId, clerkId },
-      select: { id: true, credits: true },
-    });
-
-    if (!user) {
-      return Response.json({ message: "User not found" }, { status: 404 });
-    }
-
-    if (user.credits < CREDIT_COST_PER_GENERATION) {
-      return Response.json(
-        { message: "Insufficient credits" },
-        { status: 402 }
-      );
-    }
-
-    // 4. Call Gemini
-    const contents = buildContents(messages, fileData);
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.7,
-        responseMimeType: "application/json",
-      },
-    });
-
-    const rawText = response.text ?? "";
-
-    // 5. Parse AI response
-    let parsed: {
-      assistantMessage: string;
-      files: Record<string, { code: string }>;
-      dependencies: Record<string, string>;
-    };
-
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      console.error("Failed to parse Gemini response:", rawText);
-      return Response.json(
-        { message: "AI returned an invalid response. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    const { assistantMessage, files, dependencies } = parsed;
-
-    if (!files || typeof files !== "object") {
-      return Response.json(
-        { message: "AI response missing files. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    const newFileData: FileData = {
-      files,
-      dependencies: dependencies ?? {},
-    };
-
-    // 6. Build updated messages array for DB
-    const lastUserMessage = messages[messages.length - 1];
-    const updatedMessages: Message[] = [
-      ...messages,
-      { role: "assistant", content: assistantMessage },
-    ];
-
-    // 7. Upsert workspace & deduct credit in a transaction
-    const [workspace] = await db.$transaction([
-      workspaceId
-        ? db.workspace.update({
-            where: { id: workspaceId, userId },
-            data: {
-              messages: updatedMessages as never,
-              fileData: newFileData as never,
-              // Auto-title from first user message if not set
-              title: undefined,
-            },
-          })
-        : db.workspace.create({
-            data: {
-              userId,
-              title: lastUserMessage.content.slice(0, 80),
-              messages: updatedMessages as never,
-              fileData: newFileData as never,
-            },
-          }),
-      db.user.update({
-        where: { id: userId },
-        data: { credits: { decrement: CREDIT_COST_PER_GENERATION } },
-      }),
-    ]);
-
-    const updatedUser = await db.user.findUnique({
-      where: { id: userId },
-      select: { credits: true },
-    });
-
-    // 8. Return
-    return Response.json({
-      workspaceId: workspace.id,
-      assistantMessage,
-      fileData: newFileData,
-      creditsRemaining:
-        updatedUser?.credits ?? user.credits - CREDIT_COST_PER_GENERATION,
-    });
-  } catch (error) {
-    console.error("[gen-ai-code] error:", error);
-    return Response.json({ message: "Internal server error" }, { status: 500 });
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
+
+  const body = await request.json();
+  const { workspaceId, userId, messages, fileData } = body as {
+    workspaceId: string | null;
+    userId: string;
+    messages: Message[];
+    fileData: FileData | null;
+  };
+
+  if (!messages?.length) {
+    return Response.json({ message: "No messages provided" }, { status: 400 });
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId, clerkId },
+    select: { id: true, credits: true },
+  });
+
+  if (!user)
+    return Response.json({ message: "User not found" }, { status: 404 });
+  if (user.credits < CREDIT_COST_PER_GENERATION) {
+    return Response.json({ message: "Insufficient credits" }, { status: 402 });
+  }
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enqueue = (chunk: string) =>
+        controller.enqueue(encoder.encode(chunk));
+
+      try {
+        const contents = buildContents(messages, fileData);
+
+        const geminiStream = await ai.models.generateContentStream({
+          model: "gemini-2.5-flash",
+          contents,
+          config: {
+            systemInstruction: SYSTEM_PROMPT,
+            temperature: 0.7,
+            responseMimeType: "application/json",
+            thinkingConfig: {
+              includeThoughts: true,
+            },
+          },
+        });
+
+        let accumulated = ""; // final JSON output
+        let lastEmitTime = 0; // throttle thought emissions
+
+        for await (const chunk of geminiStream) {
+          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+
+          for (const part of parts) {
+            if (!part.text) continue;
+
+            if (part.thought) {
+              // Extract just the short label — not the full wall of text
+              const now = Date.now();
+              if (now - lastEmitTime > 600) {
+                const label = extractThoughtLabel(part.text);
+                if (label) {
+                  enqueue(sseEvent("status", { message: label }));
+                  lastEmitTime = now;
+                }
+              }
+            } else {
+              // Actual JSON output
+              accumulated += part.text;
+            }
+          }
+        }
+
+        // ── Parse the complete JSON response ──────────────────────────────────
+
+        let parsed: {
+          assistantMessage: string;
+          files: Record<string, { code: string }>;
+          dependencies: Record<string, string>;
+        };
+
+        try {
+          parsed = JSON.parse(accumulated);
+        } catch {
+          enqueue(
+            sseEvent("error", {
+              message: "AI returned invalid JSON. Please try again.",
+            })
+          );
+          controller.close();
+          return;
+        }
+
+        const { assistantMessage, files, dependencies } = parsed;
+
+        if (!files || typeof files !== "object") {
+          enqueue(
+            sseEvent("error", {
+              message: "AI response missing files. Please try again.",
+            })
+          );
+          controller.close();
+          return;
+        }
+
+        // ── Validate npm packages ──────────────────────────────────────────────
+
+        enqueue(sseEvent("status", { message: "Validating packages…" }));
+        const validatedDeps = await validateDependencies(dependencies ?? {});
+        const newFileData: FileData = { files, dependencies: validatedDeps };
+
+        // ── Upsert workspace + deduct credit (single transaction) ──────────────
+
+        enqueue(sseEvent("status", { message: "Saving…" }));
+
+        const lastUserMessage = messages[messages.length - 1];
+        const updatedMessages: Message[] = [
+          ...messages,
+          { role: "assistant", content: assistantMessage },
+        ];
+
+        const [workspace] = await db.$transaction([
+          workspaceId
+            ? db.workspace.update({
+                where: { id: workspaceId, userId },
+                data: {
+                  messages: updatedMessages as never,
+                  fileData: newFileData as never,
+                },
+              })
+            : db.workspace.create({
+                data: {
+                  userId,
+                  title: lastUserMessage.content.slice(0, 80),
+                  messages: updatedMessages as never,
+                  fileData: newFileData as never,
+                },
+              }),
+          db.user.update({
+            where: { id: userId },
+            data: { credits: { decrement: CREDIT_COST_PER_GENERATION } },
+          }),
+        ]);
+
+        const updatedUser = await db.user.findUnique({
+          where: { id: userId },
+          select: { credits: true },
+        });
+
+        // ── Emit final result ──────────────────────────────────────────────────
+
+        enqueue(
+          sseEvent("done", {
+            workspaceId: workspace.id,
+            assistantMessage,
+            fileData: newFileData,
+            creditsRemaining:
+              updatedUser?.credits ?? user.credits - CREDIT_COST_PER_GENERATION,
+          })
+        );
+      } catch (err) {
+        console.error("[gen-ai-code] stream error:", err);
+        enqueue(
+          sseEvent("error", {
+            message: "Something went wrong. Please try again.",
+          })
+        );
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -6,23 +7,25 @@ import {
   SandpackLayout,
   SandpackCodeEditor,
   SandpackPreview,
-  useSandpack,
   SandpackFileExplorer,
+  useSandpack,
 } from "@codesandbox/sandpack-react";
 import { dracula } from "@codesandbox/sandpack-themes";
 import {
   Eye,
   Code2,
-  ExternalLink,
-  Loader2,
+  Download,
   AlertTriangle,
   Wand2,
-  RefreshCw,
+  Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { FileData } from "./WorkspaceClient";
+import { RingLoader } from "react-spinners";
+import JSZip from "jszip";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import type { FileData, StatusStep } from "./WorkspaceClient";
 
-// ─── Default files shown before first generation ─────────────────────────────
+// ─── Placeholder ──────────────────────────────────────────────────────────────
 
 const PLACEHOLDER_FILES = {
   "/App.js": {
@@ -46,64 +49,71 @@ const PLACEHOLDER_FILES = {
   },
 };
 
-// ─── Base dependencies always present in every sandbox ───────────────────────
+// ─── Base dependencies ────────────────────────────────────────────────────────
 
 const BASE_DEPENDENCIES: Record<string, string> = {
-  "react-router-dom": "latest", // Routing
-  "lucide-react": "latest", // Icons
-  recharts: "latest", // Charts
-  "date-fns": "latest", // Date utils
-  "framer-motion": "latest", // Animation
-  "react-hook-form": "latest", // Forms
+  "react-is": "latest",
+  "react-router-dom": "latest",
+  "lucide-react": "latest",
+  recharts: "latest",
+  "date-fns": "latest",
+  "framer-motion": "latest",
+  "react-hook-form": "latest",
   "@hookform/resolvers": "latest",
   zod: "latest",
-  "@radix-ui/react-dialog": "latest", // UI primitives
+  "@radix-ui/react-dialog": "latest",
   "@radix-ui/react-dropdown-menu": "latest",
   "@radix-ui/react-tabs": "latest",
   "@radix-ui/react-tooltip": "latest",
   "@radix-ui/react-accordion": "latest",
   "@radix-ui/react-select": "latest",
-  axios: "latest", // HTTP
-  clsx: "latest", // Utilities
+  axios: "latest",
+  clsx: "latest",
   "class-variance-authority": "latest",
   "tailwind-merge": "latest",
 };
 
-// ─── Tab type ─────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ActiveTab = "preview" | "code";
-
-// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CodePanelProps {
   fileData: FileData | null;
   isGenerating: boolean;
+  statusLog: StatusStep[];
   onImprove: (error: string) => Promise<void>;
   onFilePatch: (patches: FileData) => void;
+  appTitle: string | null;
 }
 
-// ─── Inner component — needs to be inside SandpackProvider ───────────────────
+// ─── SandpackInner ────────────────────────────────────────────────────────────
 
 function SandpackInner({
   isGenerating,
+  statusLog,
   activeTab,
   setActiveTab,
   onImprove,
+  fileData,
+  appTitle,
 }: {
   isGenerating: boolean;
+  statusLog: StatusStep[];
   activeTab: ActiveTab;
   setActiveTab: (t: ActiveTab) => void;
   onImprove: (error: string) => Promise<void>;
+  fileData: FileData | null;
+  appTitle: string | null;
 }) {
   const { sandpack, listen } = useSandpack();
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isImproving, setIsImproving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Listen for Sandpack runtime errors
   useEffect(() => {
     unsubscribeRef.current = listen((msg) => {
-      // Sandpack emits action messages for runtime errors
       if (
         msg.type === "action" &&
         "action" in msg &&
@@ -115,25 +125,21 @@ function SandpackInner({
             : "An error occurred in the preview.";
         setPreviewError(errMsg);
       }
-      // Clear error on successful compile
       if (msg.type === "done" || msg.type === "success") {
         setPreviewError(null);
       }
     });
-
     return () => unsubscribeRef.current?.();
   }, [listen]);
 
-  // Clear error when generation starts (new code incoming)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isGenerating) setPreviewError(null);
   }, [isGenerating]);
 
   const handleImprove = async () => {
     if (!previewError || isImproving) return;
     setIsImproving(true);
-    setActiveTab("preview"); // keep user on preview while fix streams
+    setActiveTab("preview");
     try {
       await onImprove(previewError);
     } finally {
@@ -142,100 +148,169 @@ function SandpackInner({
     }
   };
 
-  //   const activeFile = sandpack.activeFile;
+  // ── Export to ZIP ──────────────────────────────────────────────────────────
+  const handleExportZip = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      // Use live sandpack files (may have unsaved edits) falling back to prop
+      const filesToZip =
+        Object.keys(sandpack.files).length > 0
+          ? sandpack.files
+          : fileData?.files ?? {};
+
+      const dependencies = {
+        ...BASE_DEPENDENCIES,
+        ...(fileData?.dependencies ?? {}),
+      };
+
+      const zip = new JSZip();
+
+      // package.json
+      const packageJson = {
+        name: "buildai-app",
+        version: "1.0.0",
+        private: true,
+        dependencies: {
+          react: "^18.2.0",
+          "react-dom": "^18.2.0",
+          "react-scripts": "5.0.1",
+          ...dependencies,
+        },
+        scripts: {
+          start: "react-scripts start",
+          build: "react-scripts build",
+        },
+        browserslist: {
+          production: [">0.2%", "not dead", "not op_mini all"],
+          development: ["last 1 chrome version"],
+        },
+      };
+      zip.file("package.json", JSON.stringify(packageJson, null, 2));
+
+      // public/index.html
+      zip.file(
+        "public/index.html",
+        `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BuildAI App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>`
+      );
+
+      // src/ files — strip leading slash for zip paths
+      for (const [filePath, fileObj] of Object.entries(filesToZip)) {
+        const code =
+          typeof fileObj === "object" && fileObj !== null && "code" in fileObj
+            ? (fileObj as { code: string }).code
+            : "";
+        // Sandpack paths start with "/" — map to src/
+        const zipPath = filePath.startsWith("/")
+          ? `src${filePath}`
+          : `src/${filePath}`;
+        zip.file(zipPath, code);
+      }
+
+      // src/index.js entrypoint
+      zip.file(
+        "src/index.js",
+        `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<React.StrictMode><App /></React.StrictMode>);`
+      );
+
+      // README
+      zip.file(
+        "README.md",
+        `# BuildAI App\n\nGenerated with [BuildAI](https://buildai.app).\n\n## Getting started\n\n\`\`\`bash\nnpm install\nnpm start\n\`\`\``
+      );
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const zipName = appTitle
+        ? `${appTitle
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "")}.zip`
+        : "buildai-app.zip";
+      a.download = zipName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const currentStepLabel =
+    statusLog[statusLog.length - 1]?.label ?? "Generating…";
 
   return (
-    <div className="flex h-full flex-col">
-      {/* ── Tabs + Actions ──────────────────────────────────────────────── */}
+    <Tabs
+      value={activeTab}
+      onValueChange={(v) => setActiveTab(v as ActiveTab)}
+      className="flex h-full flex-col gap-0"
+    >
+      {/* Tabs + Actions bar */}
       <div className="flex items-center justify-between border-b border-white/6 px-2">
-        <div className="flex items-center">
-          <TabButton
-            active={activeTab === "preview"}
-            onClick={() => setActiveTab("preview")}
-            icon={<Eye className="h-3.5 w-3.5" />}
-            label="Preview"
-          />
-          <TabButton
-            active={activeTab === "code"}
-            onClick={() => setActiveTab("code")}
-            icon={<Code2 className="h-3.5 w-3.5" />}
-            label="Code"
-          />
-        </div>
+        <TabsList
+          variant="line"
+          className="h-auto gap-0 rounded-none bg-transparent p-0"
+        >
+          <TabsTrigger className="border-b-2 pt-2" value="code">
+            <Code2 className="h-3.5 w-3.5" />
+            Code
+          </TabsTrigger>
+          <TabsTrigger className="border-b-2 pt-2" value="preview">
+            <Eye className="h-3.5 w-3.5" />
+            Preview
+          </TabsTrigger>
+        </TabsList>
 
-        <div className="flex items-center gap-1 pr-1">
-          {/* Refresh */}
-          <button
-            onClick={() => sandpack.resetAllFiles()}
-            title="Reset files"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-white/25 transition-colors hover:bg-white/6 hover:text-white/50"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </button>
-
-          {/* Open in CodeSandbox */}
-          <button
-            onClick={() => {
-              const url = `https://codesandbox.io/api/v1/sandboxes/define?parameters=${encodeURIComponent(
-                JSON.stringify({
-                  files: Object.fromEntries(
-                    Object.entries(sandpack.files).map(([path, f]) => [
-                      path.replace(/^\//, ""),
-                      { content: f.code },
-                    ])
-                  ),
-                })
-              )}`;
-              window.open(url, "_blank");
-            }}
-            title="Open in CodeSandbox"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-white/25 transition-colors hover:bg-white/6 hover:text-white/50"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <Button
+          variant="ghost"
+          onClick={handleExportZip}
+          disabled={isExporting || !fileData}
+        >
+          {isExporting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
+          Download
+        </Button>
       </div>
 
-      {/* ── Content area ────────────────────────────────────────────────── */}
-      <div className="relative flex-1 overflow-hidden">
-        {/* Loading overlay during generation */}
+      {/* Content area */}
+      <div className="relative flex-1 overflow-hidden h-full">
+        {/* ── Generation overlay with RingLoader ── */}
         {isGenerating && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/80 backdrop-blur-sm">
-            <Loader2 className="h-6 w-6 animate-spin text-white/30" />
-            <p className="text-xs text-white/30">Generating your app…</p>
-          </div>
-        )}
-
-        {/* Error banner */}
-        {previewError && !isGenerating && activeTab === "preview" && (
-          <div className="absolute inset-x-0 bottom-0 z-20 border-t border-red-500/20 bg-[#1a0a0a] p-3">
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400/70" />
-              <div className="min-w-0 flex-1">
-                <p className="mb-1 text-xs font-medium text-red-400/80">
-                  Preview error
-                </p>
-                <p className="truncate text-[11px] text-red-300/50">
-                  {previewError}
-                </p>
-              </div>
-              <button
-                onClick={handleImprove}
-                disabled={isImproving}
-                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 text-[11px] font-medium text-red-400/80 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50"
-              >
-                {isImproving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Wand2 className="h-3 w-3" />
-                )}
-                {isImproving ? "Fixing…" : "Improve with AI"}
-              </button>
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-[#0a0a0a]/85 backdrop-blur-sm">
+            <RingLoader color="#60a5fa" size={64} speedMultiplier={0.8} />
+            <div className="flex flex-col items-center gap-1.5">
+              <p className="text-sm font-medium text-white/60">
+                {currentStepLabel}
+              </p>
+              <p className="text-xs text-white/20">
+                This usually takes 10–20 seconds
+              </p>
             </div>
           </div>
         )}
 
-        {/* Sandpack panels — always rendered, toggled with visibility */}
         <SandpackLayout
           style={{
             height: "100vh",
@@ -244,95 +319,88 @@ function SandpackInner({
             background: "transparent",
           }}
         >
-          {/* Preview */}
-          <div
-            className={cn(
-              "h-full w-full",
-              activeTab === "preview" ? "block" : "hidden"
-            )}
+          {/* Preview tab — keepMounted keeps the iframe alive when switching tabs */}
+          <TabsContent
+            value="preview"
+            keepMounted
+            className="mt-0 h-full w-full"
           >
             <SandpackPreview
-              style={{ height: "100%" }}
-              showNavigator={false}
+              style={{ height: "89%" }}
               showOpenInCodeSandbox={false}
-              showRefreshButton={false}
             />
-          </div>
+          </TabsContent>
 
-          {/* Code editor */}
-          <div
-            className={cn(
-              "flex h-full w-full",
-              activeTab === "code" ? "flex" : "hidden"
-            )}
+          {/* Code tab — keepMounted keeps the editor alive when switching tabs */}
+          <TabsContent
+            value="code"
+            keepMounted
+            className="mt-0 flex h-full w-full"
           >
             <SandpackFileExplorer
               style={{
-                height: "100vh",
+                height: "90%",
                 width: "180px",
-                borderRight: "0.5px solid gray",
+                borderRight: "0.5px solid rgba(255,255,255,0.08)",
               }}
             />
             <SandpackCodeEditor
-              style={{
-                height: "100vh",
-                flex: 1,
-              }}
+              style={{ height: "90%", flex: 1 }}
               showTabs
               showLineNumbers
               showInlineErrors
               closableTabs
               readOnly
             />
-          </div>
+          </TabsContent>
         </SandpackLayout>
       </div>
-    </div>
-  );
-}
 
-// ─── Tab button sub-component ─────────────────────────────────────────────────
-
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 px-3 py-2.5 text-xs transition-colors",
-        active
-          ? "border-b-2 border-blue-400 text-white"
-          : "border-b-2 border-transparent text-white/30 hover:text-white/60"
+      {/* Preview error banner */}
+      {previewError && !isGenerating && activeTab === "preview" && (
+        <div className="absolute inset-x-0 -bottom-3 z-20 border-t border-red-500/20 bg-red-950/99 p-4 pb-6">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400/70" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-red-400/80">
+                Preview error
+              </p>
+              <p className="truncate text-[11px] text-red-300/50">
+                {previewError}
+              </p>
+            </div>
+            <Button
+              onClick={handleImprove}
+              disabled={isImproving}
+              variant="destructive"
+            >
+              {isImproving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Wand2 className="h-3 w-3" />
+              )}
+              {isImproving ? "Fixing…" : "Improve with AI"}
+            </Button>
+          </div>
+        </div>
       )}
-    >
-      {icon}
-      {label}
-    </button>
+    </Tabs>
   );
 }
 
-// ─── Outer component — sets up SandpackProvider ───────────────────────────────
+// ─── CodePanel (outer) ────────────────────────────────────────────────────────
 
 export function CodePanel({
   fileData,
   isGenerating,
+  statusLog,
   onImprove,
-  onFilePatch,
+  onFilePatch: _onFilePatch,
+  appTitle,
 }: CodePanelProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("preview");
 
-  // Switch to preview automatically when new code arrives
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (fileData) setActiveTab("preview");
   }, [fileData]);
 
@@ -345,7 +413,7 @@ export function CodePanel({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <SandpackProvider
-        key={JSON.stringify(files)} // remount when file structure changes
+        key={JSON.stringify(Object.keys(files).sort())}
         template="react"
         theme={dracula}
         files={files}
@@ -358,9 +426,12 @@ export function CodePanel({
       >
         <SandpackInner
           isGenerating={isGenerating}
+          statusLog={statusLog}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onImprove={onImprove}
+          fileData={fileData}
+          appTitle={appTitle}
         />
       </SandpackProvider>
     </div>

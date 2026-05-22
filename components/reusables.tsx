@@ -2,8 +2,16 @@ export const GrayTitle = ({ children }: { children: React.ReactNode }) => (
   <span className="text-white/90">{children}</span>
 );
 
-export const BlueTitle = ({ children }: { children: React.ReactNode }) => (
-  <span className="bg-linear-to-br from-blue-300 via-blue-400 to-blue-600 bg-clip-text text-transparent">
+export const BlueTitle = ({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) => (
+  <span
+    className={`bg-linear-to-br font-serif from-blue-300 via-blue-400 to-blue-600 bg-clip-text text-transparent ${className}`}
+  >
     {children}
   </span>
 );

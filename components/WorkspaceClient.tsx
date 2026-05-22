@@ -3,25 +3,26 @@
 import { useState, useCallback } from "react";
 import { ChatPanel } from "./ChatPanel";
 import { CodePanel } from "./CodePanel";
-import {
-  CREDIT_COST_PER_GENERATION,
-  MIN_CREDITS_TO_GENERATE,
-} from "@/lib/constants";
+import { MIN_CREDITS_TO_GENERATE } from "@/lib/constants";
 import { toast } from "sonner";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type MessageRole = "user" | "assistant";
 
 export interface Message {
   role: MessageRole;
   content: string;
-  imageUrl?: string; // Supabase CDN URL for uploaded images
+  imageUrl?: string;
 }
 
 export interface FileData {
   files: Record<string, { code: string }>;
   dependencies: Record<string, string>;
+  title?: string;
+}
+
+export interface StatusStep {
+  label: string;
+  status: "running" | "done";
 }
 
 interface WorkspaceData {
@@ -38,8 +39,6 @@ interface WorkspaceClientProps {
   userId: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function parseMessages(raw: unknown): Message[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter(
@@ -54,8 +53,6 @@ function parseFileData(raw: unknown): FileData | null {
   if (!f.files || !f.dependencies) return null;
   return raw as FileData;
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function WorkspaceClient({
   initialPrompt,
@@ -74,16 +71,31 @@ export function WorkspaceClient({
   );
   const [credits, setCredits] = useState(userCredits);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [statusLog, setStatusLog] = useState<StatusStep[]>([]);
 
-  // Called by ChatPanel when the user submits a prompt
+  const pushStep = (label: string) => {
+    setStatusLog((prev) => [
+      ...prev.map((s, i) =>
+        i === prev.length - 1 ? { ...s, status: "done" as const } : s
+      ),
+      { label, status: "running" as const },
+    ]);
+  };
+
+  const completeSteps = () => {
+    setStatusLog((prev) =>
+      prev.map((s, i) =>
+        i === prev.length - 1 ? { ...s, status: "done" as const } : s
+      )
+    );
+  };
+
   const handleGenerate = useCallback(
     async (prompt: string, imageUrl?: string) => {
       if (isGenerating) return;
 
-      if (credits < MIN_CREDITS_TO_GENERATE) {
-        toast.error("Not enough credits. Please upgrade your plan.");
-        return;
-      }
+      // Let ChatPanel handle the no-credits UI — just guard here silently
+      if (credits < MIN_CREDITS_TO_GENERATE) return;
 
       const userMessage: Message = {
         role: "user",
@@ -91,9 +103,9 @@ export function WorkspaceClient({
         ...(imageUrl ? { imageUrl } : {}),
       };
 
-      // Optimistically append user message
       setMessages((prev) => [...prev, userMessage]);
       setIsGenerating(true);
+      setStatusLog([{ label: "Thinking…", status: "running" }]);
 
       try {
         const conversationHistory = [...messages, userMessage];
@@ -110,97 +122,107 @@ export function WorkspaceClient({
         });
 
         if (res.status === 402) {
-          toast.error("Not enough credits. Please upgrade your plan.");
-          // Remove the optimistic user message
+          // No credits — just roll back the message; ChatPanel shows the upgrade UI
           setMessages((prev) => prev.slice(0, -1));
           return;
         }
-
         if (res.status === 429) {
           toast.error("Too many requests. Please slow down.");
           setMessages((prev) => prev.slice(0, -1));
           return;
         }
+        if (!res.ok || !res.body) throw new Error("Generation failed");
 
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message ?? "Generation failed");
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === "status") {
+                pushStep(event.message);
+              } else if (event.type === "done") {
+                completeSteps();
+                setWorkspaceId(event.workspaceId);
+                setFileData(event.fileData);
+                setCredits(event.creditsRemaining);
+                setMessages((prev) => [
+                  ...prev,
+                  { role: "assistant", content: event.assistantMessage },
+                ]);
+                window.history.replaceState(
+                  null,
+                  "",
+                  `/workspace?id=${event.workspaceId}`
+                );
+              } else if (event.type === "error") {
+                throw new Error(event.message);
+              }
+            } catch {
+              // skip malformed SSE lines
+            }
+          }
         }
-
-        const data = await res.json();
-
-        // data shape: { workspaceId, assistantMessage, fileData, creditsRemaining }
-        setWorkspaceId(data.workspaceId);
-        setFileData(data.fileData);
-        setCredits(data.creditsRemaining);
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: data.assistantMessage },
-        ]);
-
-        // Sync URL without full navigation
-        window.history.replaceState(
-          null,
-          "",
-          `/workspace?id=${data.workspaceId}`
-        );
       } catch (err) {
         console.error(err);
         toast.error(
           err instanceof Error ? err.message : "Something went wrong."
         );
-        // Remove the optimistic user message on hard failure
         setMessages((prev) => prev.slice(0, -1));
       } finally {
         setIsGenerating(false);
+        setStatusLog([]);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [credits, fileData, isGenerating, messages, userId, workspaceId]
   );
 
-  // Called by CodePanel's "Improve with AI" banner
   const handleImprove = useCallback(
     async (error: string) => {
-      if (!fileData || isGenerating) return;
-
-      if (credits < MIN_CREDITS_TO_GENERATE) {
-        toast.error("Not enough credits to use Improve with AI.");
+      if (!fileData || isGenerating || credits < MIN_CREDITS_TO_GENERATE)
         return;
-      }
-
-      const prompt = `There is an error in the preview:\n\n\`\`\`\n${error}\n\`\`\`\n\nPlease fix it.`;
-      await handleGenerate(prompt);
+      await handleGenerate(
+        `There is an error in the preview:\n\n\`\`\`\n${error}\n\`\`\`\n\nPlease fix it.`
+      );
     },
     [credits, fileData, handleGenerate, isGenerating]
   );
 
-  // Called by CodePanel when files are patched by Cline SDK (Improve with AI flow)
   const handleFilePatch = useCallback((patches: FileData) => {
     setFileData(patches);
   }, []);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden bg-[#0a0a0a]">
-      {/* Left — Chat */}
       <ChatPanel
         messages={messages}
         isGenerating={isGenerating}
+        statusLog={statusLog}
         credits={credits}
         initialPrompt={initialPrompt}
         onGenerate={handleGenerate}
         userId={userId}
         workspaceId={workspaceId}
       />
-
-      {/* Divider */}
       <div className="w-px shrink-0 bg-white/6" />
-
-      {/* Right — Code + Preview */}
       <CodePanel
         fileData={fileData}
         isGenerating={isGenerating}
+        statusLog={statusLog}
         onImprove={handleImprove}
         onFilePatch={handleFilePatch}
+        appTitle={workspace?.title ?? null}
       />
     </div>
   );

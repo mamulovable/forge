@@ -60,8 +60,9 @@ export default function LandingPage() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] selection:bg-white/20">
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="relative flex flex-col items-center overflow-hidden px-4 pb-24 pt-28 text-center">
+      <section className="relative flex flex-col items-center overflow-hidden px-4 pb-24 pt-40 text-center">
         <HoleBackground
+          strokeColor="rgba(255,255,255,0.05)" // blur
           className="absolute inset-0 h-full w-full"
           style={{
             maskImage:
@@ -344,10 +345,13 @@ export default function LandingPage() {
 
         <div className="mx-auto max-w-5xl">
           <PricingTable
-            appearance={{
-              elements: {
-                pricingTableCard:
-                  "bg-[#0f0f0f] border border-white/8 rounded-2xl",
+            checkoutProps={{
+              appearance: {
+                elements: {
+                  drawerRoot: {
+                    zIndex: 2000,
+                  },
+                },
               },
             }}
           />
@@ -357,6 +361,7 @@ export default function LandingPage() {
       {/* ── CTA ───────────────────────────────────────────────────────────── */}
       <section className="relative mx-auto mb-32 max-w-5xl overflow-hidden rounded-2xl border border-white/8 px-10 py-24 text-center">
         <HoleBackground
+          strokeColor="rgba(255,255,255,0.05)" // blur
           numberOfLines={36}
           numberOfDiscs={36}
           particleRGBColor={[147, 197, 253]}
@@ -387,6 +392,10 @@ export default function LandingPage() {
           </Button>
         </SignInButton>
       </section>
+
+      <footer className="relative z-10 border-t border-white/7 py-12 mx-auto px-6 flex flex-wrap items-center justify-center text-stone-400">
+        Made with ❤️ by RoadsideCoder
+      </footer>
     </main>
   );
 }
