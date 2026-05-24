@@ -26,7 +26,7 @@ import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PricingModal } from "@/components/PricingModal";
-import type { FileData, StatusStep } from "./WorkspaceClient";
+import type { FileData, StatusStep } from "@/types/workspace";
 
 // ─── Placeholder ──────────────────────────────────────────────────────────────
 

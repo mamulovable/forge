@@ -4,7 +4,7 @@ import { Agent, createTool } from "@cline/sdk";
 import { z } from "zod";
 import { db } from "@/lib/prisma";
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
-import type { FileData } from "@/components/WorkspaceClient";
+import type { FileData } from "@/types/workspace";
 
 // ─── SSE helper ───────────────────────────────────────────────────────────────
 

@@ -6,32 +6,19 @@ import { ChatPanel } from "./ChatPanel";
 import { CodePanel } from "./CodePanel";
 import { MIN_CREDITS_TO_GENERATE } from "@/lib/constants";
 import { toast } from "sonner";
+import type {
+  Message,
+  FileData,
+  StatusStep,
+  WorkspaceData,
+} from "@/types/workspace";
 
-export type MessageRole = "user" | "assistant";
-
-export interface Message {
-  role: MessageRole;
-  content: string;
-  imageUrl?: string;
-}
-
-export interface FileData {
-  files: Record<string, { code: string }>;
-  dependencies: Record<string, string>;
-  title?: string;
-}
-
-export interface StatusStep {
-  label: string;
-  status: "running" | "done";
-}
-
-interface WorkspaceData {
-  id: string;
-  title: string | null;
-  messages: unknown;
-  fileData: unknown;
-}
+export type {
+  MessageRole,
+  Message,
+  FileData,
+  StatusStep,
+} from "@/types/workspace";
 
 interface WorkspaceClientProps {
   initialPrompt: string | null;

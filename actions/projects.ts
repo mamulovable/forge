@@ -4,17 +4,9 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/prisma";
+import type { ProjectSummary } from "@/types/project";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface ProjectSummary {
-  id: string;
-  title: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  messageCount: number;
-  firstPrompt: string | null;
-}
+export type { ProjectSummary } from "@/types/project";
 
 // ─── Get all workspaces for the current user ──────────────────────────────────
 

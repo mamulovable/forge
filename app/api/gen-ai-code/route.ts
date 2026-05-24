@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { db } from "@/lib/prisma";
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
-import type { Message, FileData } from "@/components/WorkspaceClient";
+import type { Message, FileData } from "@/types/workspace";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 

@@ -5,7 +5,8 @@ import { Zap, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { checkUser } from "@/lib/checkUser";
 import { PricingModal } from "@/components/PricingModal";
-import { PLANS, type Plan } from "@/lib/constants";
+import { PLANS } from "@/lib/constants";
+import type { Plan } from "@/types/plans";
 
 export default async function Header() {
   const user = await checkUser();

@@ -3,21 +3,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/prisma";
+import type { WorkspaceUser, WorkspaceData } from "@/types/workspace";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface WorkspaceUser {
-  id: string;
-  credits: number;
-  plan: string;
-}
-
-export interface WorkspaceData {
-  id: string;
-  title: string | null;
-  messages: unknown;
-  fileData: unknown;
-}
+export type { WorkspaceUser, WorkspaceData } from "@/types/workspace";
 
 // ─── Get the current authenticated user ──────────────────────────────────────
 
