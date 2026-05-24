@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
   if (!user)
     return Response.json({ message: "User not found" }, { status: 404 });
 
-  // Paid-only gate
-  if (user.plan === "free")
+  // Pro-only gate
+  if (user.plan !== "pro")
     return Response.json({ message: "Upgrade required" }, { status: 403 });
 
   if (user.credits < CREDIT_COST_PER_GENERATION)

@@ -64,6 +64,10 @@ export function WorkspaceClient({
   const [statusLog, setStatusLog] = useState<StatusStep[]>([]);
   const [isImproving, setIsImproving] = useState(false);
 
+  // AbortController refs — used to cancel in-flight streams
+  const generateAbortRef = useRef<AbortController | null>(null);
+  const improveAbortRef = useRef<AbortController | null>(null);
+
   // Refs to avoid stale closures in callbacks
   const messagesRef = useRef<Message[]>(messages);
   useEffect(() => {
@@ -117,12 +121,17 @@ export function WorkspaceClient({
       setIsGenerating(true);
       setStatusLog([{ label: "Thinking…", status: "running" }]);
 
+      // Create a fresh AbortController for this request
+      const abortController = new AbortController();
+      generateAbortRef.current = abortController;
+
       try {
         const conversationHistory = [...currentMessages, userMessage];
 
         const res = await fetch("/api/gen-ai-code", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: abortController.signal,
           body: JSON.stringify({
             workspaceId: currentWorkspaceId,
             userId,
@@ -183,12 +192,18 @@ export function WorkspaceClient({
           }
         }
       } catch (err) {
+        // User-initiated stop — silently roll back the user message
+        if (err instanceof Error && err.name === "AbortError") {
+          setMessages((prev) => prev.slice(0, -1));
+          return;
+        }
         console.error(err);
         toast.error(
           err instanceof Error ? err.message : "Something went wrong."
         );
         setMessages((prev) => prev.slice(0, -1));
       } finally {
+        generateAbortRef.current = null;
         setIsGenerating(false);
         setStatusLog([]);
       }
@@ -216,10 +231,15 @@ export function WorkspaceClient({
         { role: "assistant", content: "" }, // placeholder, updated live
       ]);
 
+      // Create a fresh AbortController for this request
+      const abortController = new AbortController();
+      improveAbortRef.current = abortController;
+
       try {
         const res = await fetch("/api/improve", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: abortController.signal,
           body: JSON.stringify({
             userId,
             workspaceId: workspaceIdRef.current,
@@ -299,9 +319,15 @@ export function WorkspaceClient({
           }
         }
       } catch (err) {
+        // User-initiated stop — silently roll back the user + placeholder messages
+        if (err instanceof Error && err.name === "AbortError") {
+          setMessages((prev) => prev.slice(0, -2));
+          return;
+        }
         toast.error(err instanceof Error ? err.message : "Improve failed.");
         setMessages((prev) => prev.slice(0, -2));
       } finally {
+        improveAbortRef.current = null;
         setIsImproving(false);
       }
     },
@@ -309,6 +335,12 @@ export function WorkspaceClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [credits, isGenerating, isImproving, userId]
   );
+
+  // Cancel whichever stream is currently in-flight
+  const handleStop = useCallback(() => {
+    generateAbortRef.current?.abort();
+    improveAbortRef.current?.abort();
+  }, []);
 
   const handleFilePatch = useCallback((patches: FileData) => {
     setFileData(patches);
@@ -324,6 +356,7 @@ export function WorkspaceClient({
         credits={credits}
         initialPrompt={initialPrompt}
         onGenerate={handleGenerate}
+        onStop={handleStop}
         userId={userId}
         workspaceId={workspaceId}
         appTitle={fileData?.title ?? workspace?.title ?? null}
