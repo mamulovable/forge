@@ -1,24 +1,27 @@
 import Link from "next/link";
 import { UserButton, SignInButton, Show } from "@clerk/nextjs";
+import Image from "next/image";
 import { Zap, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { checkUser } from "@/lib/checkUser";
 import { PricingModal } from "@/components/PricingModal";
+import { PLANS, type Plan } from "@/lib/constants";
 
 export default async function Header() {
-  await checkUser();
+  const user = await checkUser();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-white/6 bg-white/7 backdrop-blur-md">
       <nav className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 select-none">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white">
-            <Zap className="h-4 w-4 fill-black text-black" />
-          </div>
-          <span className="text-[15px] font-semibold tracking-tight text-white">
-            BuildAI
-          </span>
+          <Image
+            src="/logo.png"
+            alt="Forge"
+            width={100}
+            height={100}
+            className="h-9 w-auto rounded-md"
+          />
         </Link>
 
         {/* Right side */}
@@ -31,27 +34,16 @@ export default async function Header() {
               Projects
             </Link>
 
-            <PricingModal>
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-full text-xs active:scale-95 cursor-pointer bg-white text-black px-3">
-                <Zap className="h-3 w-3 fill-black" />
-                Upgrade
-              </span>
-            </PricingModal>
+            {user && (
+              <PricingModal>
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 text-xs text-white/70">
+                  <Zap className="h-3 w-3 fill-white/70" />
+                  {user.credits} / {PLANS[user?.plan as Plan].credits} credits
+                </span>
+              </PricingModal>
+            )}
 
-            <UserButton
-              appearance={{
-                elements: {
-                  avatarBox:
-                    "h-8 w-8 rounded-full ring-1 ring-white/10 hover:ring-white/25 transition-all",
-                  userButtonPopoverCard:
-                    "bg-[#111111] border border-white/10 shadow-2xl shadow-black/60",
-                  userButtonPopoverActionButton:
-                    "text-white/70 hover:text-white hover:bg-white/5",
-                  userButtonPopoverActionButtonText: "text-[13px]",
-                  userButtonPopoverFooter: "hidden",
-                },
-              }}
-            />
+            <UserButton />
           </Show>
 
           <Show when="signed-out">

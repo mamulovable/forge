@@ -1,3 +1,4 @@
+// CodePanel.tsx
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
@@ -18,11 +19,13 @@ import {
   AlertTriangle,
   Wand2,
   Loader2,
+  ArrowUp,
 } from "lucide-react";
 import { RingLoader } from "react-spinners";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { PricingModal } from "@/components/PricingModal";
 import type { FileData, StatusStep } from "./WorkspaceClient";
 
 // ─── Placeholder ──────────────────────────────────────────────────────────────
@@ -81,12 +84,18 @@ interface CodePanelProps {
   fileData: FileData | null;
   isGenerating: boolean;
   statusLog: StatusStep[];
-  onImprove: (error: string) => Promise<void>;
+  onImprove: (userRequest: string) => Promise<void>;
+  onFixError: (error: string) => Promise<void>;
   onFilePatch: (patches: FileData) => void;
   appTitle: string | null;
+  isImproving: boolean;
+  isProUser: boolean;
 }
 
 // ─── SandpackInner ────────────────────────────────────────────────────────────
+// Lives inside SandpackProvider so it can call useSandpack().
+// Receives fileData as a prop and uses updateFile() to push code changes
+// into the live Sandpack instance without remounting the provider.
 
 function SandpackInner({
   isGenerating,
@@ -94,22 +103,46 @@ function SandpackInner({
   activeTab,
   setActiveTab,
   onImprove,
+  onFixError,
   fileData,
   appTitle,
+  isImproving,
+  isProUser,
 }: {
   isGenerating: boolean;
   statusLog: StatusStep[];
   activeTab: ActiveTab;
   setActiveTab: (t: ActiveTab) => void;
-  onImprove: (error: string) => Promise<void>;
+  onImprove: (userRequest: string) => Promise<void>;
+  onFixError: (error: string) => Promise<void>;
   fileData: FileData | null;
   appTitle: string | null;
+  isImproving: boolean;
+  isProUser: boolean;
 }) {
   const { sandpack, listen } = useSandpack();
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [isImproving, setIsImproving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [improveInput, setImproveInput] = useState("");
+  const [showImproveInput, setShowImproveInput] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Push file content updates into Sandpack without remounting.
+  // This runs whenever fileData changes (e.g. after improve completes).
+  // SandpackProvider key only changes when the file path set changes,
+  // so this is the safe way to update existing file contents.
+  const prevFilesRef = useRef<Record<string, { code: string }>>({});
+  useEffect(() => {
+    if (!fileData?.files) return;
+    const prev = prevFilesRef.current;
+    for (const [path, { code }] of Object.entries(fileData.files)) {
+      if (prev[path]?.code !== code) {
+        sandpack.updateFile(path, code);
+      }
+    }
+    prevFilesRef.current = fileData.files;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileData?.files]);
 
   // Listen for Sandpack runtime errors
   useEffect(() => {
@@ -124,8 +157,17 @@ function SandpackInner({
             ? msg.message
             : "An error occurred in the preview.";
         setPreviewError(errMsg);
+        return;
       }
-      if (msg.type === "done" || msg.type === "success") {
+      if (msg.type === "compile") {
+        const errMsg =
+          "message" in msg && typeof msg.message === "string"
+            ? msg.message
+            : "Compile error in preview.";
+        setPreviewError(errMsg);
+        return;
+      }
+      if (msg.type === "success") {
         setPreviewError(null);
       }
     });
@@ -136,16 +178,12 @@ function SandpackInner({
     if (isGenerating) setPreviewError(null);
   }, [isGenerating]);
 
-  const handleImprove = async () => {
-    if (!previewError || isImproving) return;
-    setIsImproving(true);
-    setActiveTab("preview");
-    try {
-      await onImprove(previewError);
-    } finally {
-      setIsImproving(false);
-      setPreviewError(null);
-    }
+  const handleImproveSubmit = async () => {
+    const trimmed = improveInput.trim();
+    if (!trimmed || isImproving) return;
+    setImproveInput("");
+    setShowImproveInput(false);
+    await onImprove(trimmed);
   };
 
   // ── Export to ZIP ──────────────────────────────────────────────────────────
@@ -153,7 +191,6 @@ function SandpackInner({
     if (isExporting) return;
     setIsExporting(true);
     try {
-      // Use live sandpack files (may have unsaved edits) falling back to prop
       const filesToZip =
         Object.keys(sandpack.files).length > 0
           ? sandpack.files
@@ -166,9 +203,8 @@ function SandpackInner({
 
       const zip = new JSZip();
 
-      // package.json
       const packageJson = {
-        name: "buildai-app",
+        name: "forge-app",
         version: "1.0.0",
         private: true,
         dependencies: {
@@ -188,7 +224,6 @@ function SandpackInner({
       };
       zip.file("package.json", JSON.stringify(packageJson, null, 2));
 
-      // public/index.html
       zip.file(
         "public/index.html",
         `<!DOCTYPE html>
@@ -196,7 +231,7 @@ function SandpackInner({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>BuildAI App</title>
+    <title>Forge App</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body>
@@ -205,20 +240,17 @@ function SandpackInner({
 </html>`
       );
 
-      // src/ files — strip leading slash for zip paths
       for (const [filePath, fileObj] of Object.entries(filesToZip)) {
         const code =
           typeof fileObj === "object" && fileObj !== null && "code" in fileObj
             ? (fileObj as { code: string }).code
             : "";
-        // Sandpack paths start with "/" — map to src/
         const zipPath = filePath.startsWith("/")
           ? `src${filePath}`
           : `src/${filePath}`;
         zip.file(zipPath, code);
       }
 
-      // src/index.js entrypoint
       zip.file(
         "src/index.js",
         `import React from 'react';
@@ -229,10 +261,9 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<React.StrictMode><App /></React.StrictMode>);`
       );
 
-      // README
       zip.file(
         "README.md",
-        `# BuildAI App\n\nGenerated with [BuildAI](https://buildai.app).\n\n## Getting started\n\n\`\`\`bash\nnpm install\nnpm start\n\`\`\``
+        `# Forge App\n\nGenerated with [Forge](https://forge.app).\n\n## Getting started\n\n\`\`\`bash\nnpm install\nnpm start\n\`\`\``
       );
 
       const blob = await zip.generateAsync({ type: "blob" });
@@ -244,7 +275,7 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-|-$/g, "")}.zip`
-        : "buildai-app.zip";
+        : "forge-app.zip";
       a.download = zipName;
       a.click();
       URL.revokeObjectURL(url);
@@ -280,29 +311,79 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
           </TabsTrigger>
         </TabsList>
 
-        <Button
-          variant="ghost"
-          onClick={handleExportZip}
-          disabled={isExporting || !fileData}
-        >
-          {isExporting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <div className="flex items-center gap-1.5">
+          {/* ── Improve button ── */}
+          {isProUser ? (
+            showImproveInput ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={improveInput}
+                  onChange={(e) => setImproveInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleImproveSubmit();
+                    if (e.key === "Escape") setShowImproveInput(false);
+                  }}
+                  placeholder="What should I improve?"
+                  className="h-7 w-52 rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-white/80 placeholder:text-white/25 focus:border-white/20 focus:outline-none"
+                />
+                <Button
+                  size="icon"
+                  onClick={handleImproveSubmit}
+                  disabled={!improveInput.trim() || isImproving}
+                  className="h-7 w-7 rounded-lg bg-white text-black hover:bg-white/90"
+                >
+                  {isImproving ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ArrowUp className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowImproveInput(true)}
+                disabled={isImproving || !fileData}
+                className="h-7 gap-1.5 text-xs text-white/40 hover:text-white/70"
+              >
+                <Wand2 className="h-3.5 w-3.5" />
+                {isImproving ? "Improving…" : "Improve with Agent (Pro)"}
+              </Button>
+            )
           ) : (
-            <Download className="h-3.5 w-3.5" />
+            <PricingModal reason="upgrade">
+              <span className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-white/40 hover:text-white/70">
+                <Wand2 className="h-3.5 w-3.5" />
+                Improve
+              </span>
+            </PricingModal>
           )}
-          Download
-        </Button>
+
+          <Button
+            variant="ghost"
+            onClick={handleExportZip}
+            disabled={isExporting || !fileData}
+          >
+            {isExporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            Download
+          </Button>
+        </div>
       </div>
 
       {/* Content area */}
       <div className="relative flex-1 overflow-hidden h-full">
-        {/* ── Generation overlay with RingLoader ── */}
-        {isGenerating && (
+        {(isGenerating || isImproving) && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-[#0a0a0a]/85 backdrop-blur-sm">
             <RingLoader color="#60a5fa" size={64} speedMultiplier={0.8} />
             <div className="flex flex-col items-center gap-1.5">
               <p className="text-sm font-medium text-white/60">
-                {currentStepLabel}
+                {isImproving ? "Improving with Cline AI…" : currentStepLabel}
               </p>
               <p className="text-xs text-white/20">
                 This usually takes 10–20 seconds
@@ -319,7 +400,6 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
             background: "transparent",
           }}
         >
-          {/* Preview tab — keepMounted keeps the iframe alive when switching tabs */}
           <TabsContent
             value="preview"
             keepMounted
@@ -331,7 +411,6 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
             />
           </TabsContent>
 
-          {/* Code tab — keepMounted keeps the editor alive when switching tabs */}
           <TabsContent
             value="code"
             keepMounted
@@ -356,34 +435,32 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
         </SandpackLayout>
       </div>
 
-      {/* Preview error banner */}
-      {previewError && !isGenerating && activeTab === "preview" && (
-        <div className="absolute inset-x-0 -bottom-3 z-20 border-t border-red-500/20 bg-red-950/99 p-4 pb-6">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400/70" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-red-400/80">
-                Preview error
-              </p>
-              <p className="truncate text-[11px] text-red-300/50">
-                {previewError}
-              </p>
-            </div>
-            <Button
-              onClick={handleImprove}
-              disabled={isImproving}
-              variant="destructive"
-            >
-              {isImproving ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
+      {/* Preview error banner — uses onFixError (Gemini), not onImprove (Cline) */}
+      {previewError &&
+        !isGenerating &&
+        !isImproving &&
+        activeTab === "preview" && (
+          <div className="absolute inset-x-0 -bottom-3 z-20 border-t border-red-500/20 bg-red-950/99 p-4 pb-6">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400/70" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-red-400/80">
+                  Preview error
+                </p>
+                <p className="break-all text-[11px] text-red-300/50">
+                  {previewError}
+                </p>
+              </div>
+              <Button
+                onClick={() => onFixError(previewError)}
+                variant="destructive"
+              >
                 <Wand2 className="h-3 w-3" />
-              )}
-              {isImproving ? "Fixing…" : "Improve with AI"}
-            </Button>
+                Fix with AI
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </Tabs>
   );
 }
@@ -395,8 +472,11 @@ export function CodePanel({
   isGenerating,
   statusLog,
   onImprove,
+  onFixError,
   onFilePatch: _onFilePatch,
   appTitle,
+  isImproving,
+  isProUser,
 }: CodePanelProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("preview");
 
@@ -410,10 +490,15 @@ export function CodePanel({
     ...(fileData?.dependencies ?? {}),
   };
 
+  // Key only on file path set — NOT on file contents.
+  // Content changes go through sandpack.updateFile() inside SandpackInner.
+  // This prevents Sandpack from remounting when only code changes.
+  const filePathKey = Object.keys(files).sort().join("|");
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <SandpackProvider
-        key={JSON.stringify(Object.keys(files).sort())}
+        key={filePathKey}
         template="react"
         theme={dracula}
         files={files}
@@ -430,8 +515,11 @@ export function CodePanel({
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onImprove={onImprove}
+          onFixError={onFixError}
           fileData={fileData}
           appTitle={appTitle}
+          isImproving={isImproving}
+          isProUser={isProUser}
         />
       </SandpackProvider>
     </div>

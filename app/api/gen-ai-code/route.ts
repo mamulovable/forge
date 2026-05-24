@@ -66,6 +66,7 @@ RULES:
 2. The JSON must match this exact shape:
 {
   "assistantMessage": "<brief explanation of what you built/changed>",
+  "title": "<short 2-4 word title for the app, e.g. 'Todo List App'>",
   "files": {
     "/App.js": { "code": "<full file content>" },
     "/components/SomeComponent.js": { "code": "<full file content>" }
@@ -159,7 +160,7 @@ export async function POST(request: NextRequest) {
         const contents = buildContents(messages, fileData);
 
         const geminiStream = await ai.models.generateContentStream({
-          model: "gemini-2.5-flash",
+          model: "gemini-3.5-flash",
           contents,
           config: {
             systemInstruction: SYSTEM_PROMPT,
@@ -201,6 +202,7 @@ export async function POST(request: NextRequest) {
 
         let parsed: {
           assistantMessage: string;
+          title?: string;
           files: Record<string, { code: string }>;
           dependencies: Record<string, string>;
         };
@@ -217,7 +219,12 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        const { assistantMessage, files, dependencies } = parsed;
+        const {
+          assistantMessage,
+          title: aiTitle,
+          files,
+          dependencies,
+        } = parsed;
 
         if (!files || typeof files !== "object") {
           enqueue(
@@ -233,7 +240,11 @@ export async function POST(request: NextRequest) {
 
         enqueue(sseEvent("status", { message: "Validating packages…" }));
         const validatedDeps = await validateDependencies(dependencies ?? {});
-        const newFileData: FileData = { files, dependencies: validatedDeps };
+        const newFileData: FileData = {
+          files,
+          dependencies: validatedDeps,
+          title: aiTitle,
+        };
 
         // ── Upsert workspace + deduct credit (single transaction) ──────────────
 
@@ -257,7 +268,7 @@ export async function POST(request: NextRequest) {
             : db.workspace.create({
                 data: {
                   userId,
-                  title: lastUserMessage.content.slice(0, 80),
+                  title: aiTitle ?? lastUserMessage.content.slice(0, 80),
                   messages: updatedMessages as never,
                   fileData: newFileData as never,
                 },

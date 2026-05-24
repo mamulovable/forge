@@ -25,7 +25,6 @@ export function ProjectCard({ projects }: ProjectCardProps) {
             key={project.id}
             className="group relative flex flex-col rounded-xl border border-white/6 bg-[#0f0f0f] p-4 transition-colors hover:border-white/10 hover:bg-[#111111]"
           >
-            {/* Full-card link */}
             <Link
               href={`/workspace?id=${project.id}`}
               className="absolute inset-0 rounded-xl"
@@ -33,21 +32,26 @@ export function ProjectCard({ projects }: ProjectCardProps) {
             />
 
             {/* Top row */}
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <p className="line-clamp-2 text-sm font-medium leading-snug text-white/80">
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <p className="line-clamp-1 text-sm font-medium leading-snug text-white/80">
                 {title}
               </p>
-
-              {/* Delete button — z-10 so it sits above the card link */}
               <DeleteProjectModal project={project}>
-                <span className="relative z-10 text-white/20  hover:text-red-400">
+                <span className="relative z-10 text-white/20 hover:text-red-400">
                   <Trash2 className="h-3.5 w-3.5" />
                 </span>
               </DeleteProjectModal>
             </div>
 
+            {/* First prompt preview */}
+            {project.firstPrompt && (
+              <p className="mb-3 line-clamp-2 text-[12px] leading-relaxed text-white/30">
+                {project.firstPrompt}
+              </p>
+            )}
+
             {/* Meta */}
-            <div className="mt-auto flex items-center gap-3 pt-2">
+            <div className="mt-auto flex items-center gap-3 pt-2 border-t border-white/4">
               <span className="flex items-center gap-1 text-[11px] text-white/25">
                 <MessageSquare className="h-3 w-3" />
                 {msgCount} message{msgCount !== 1 ? "s" : ""}

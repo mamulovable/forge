@@ -13,6 +13,7 @@ export interface ProjectSummary {
   createdAt: Date;
   updatedAt: Date;
   messageCount: number;
+  firstPrompt: string | null;
 }
 
 // ─── Get all workspaces for the current user ──────────────────────────────────

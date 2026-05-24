@@ -20,8 +20,11 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "AI App Builder",
+  title: "Forge - AI App Builder",
   description: "",
+  icons: {
+    icon: "/logo-short.jpeg",
+  },
 };
 
 export default function RootLayout({
