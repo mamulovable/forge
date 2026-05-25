@@ -4,6 +4,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { ChatPanel } from "./ChatPanel";
 import { CodePanel } from "./CodePanel";
+import { MobileBlocker } from "./MobileBlocker";
 import { MIN_CREDITS_TO_GENERATE } from "@/lib/constants";
 import { toast } from "sonner";
 import type {
@@ -347,36 +348,44 @@ export function WorkspaceClient({
   }, []);
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden bg-[#0a0a0a]">
-      <ChatPanel
-        isImproving={isImproving}
-        messages={messages}
-        isGenerating={isGenerating}
-        statusLog={statusLog}
-        credits={credits}
-        initialPrompt={initialPrompt}
-        onGenerate={handleGenerate}
-        onStop={handleStop}
-        userId={userId}
-        workspaceId={workspaceId}
-        appTitle={fileData?.title ?? workspace?.title ?? null}
-      />
-      <div className="w-px shrink-0 bg-white/6" />
-      <CodePanel
-        fileData={fileData}
-        isGenerating={isGenerating}
-        statusLog={statusLog}
-        onImprove={handleImprove}
-        onFixError={(error) =>
-          handleGenerate(
-            `There is an error in the preview:\n\n\`\`\`\n${error}\n\`\`\`\n\nPlease fix it.`
-          )
-        }
-        onFilePatch={handleFilePatch}
-        appTitle={fileData?.title ?? workspace?.title ?? null}
-        isImproving={isImproving}
-        isProUser={userPlan === "pro"}
-      />
-    </div>
+    <>
+      {/* Mobile blocker — visible only on small screens */}
+      <div className="md:hidden">
+        <MobileBlocker />
+      </div>
+
+      {/* Workspace — visible only on md+ screens */}
+      <div className="hidden md:flex h-[calc(100vh-3.5rem)] overflow-hidden bg-[#0a0a0a]">
+        <ChatPanel
+          isImproving={isImproving}
+          messages={messages}
+          isGenerating={isGenerating}
+          statusLog={statusLog}
+          credits={credits}
+          initialPrompt={initialPrompt}
+          onGenerate={handleGenerate}
+          onStop={handleStop}
+          userId={userId}
+          workspaceId={workspaceId}
+          appTitle={fileData?.title ?? workspace?.title ?? null}
+        />
+        <div className="w-px shrink-0 bg-white/6" />
+        <CodePanel
+          fileData={fileData}
+          isGenerating={isGenerating}
+          statusLog={statusLog}
+          onImprove={handleImprove}
+          onFixError={(error) =>
+            handleGenerate(
+              `There is an error in the preview:\n\n\`\`\`\n${error}\n\`\`\`\n\nPlease fix it.`
+            )
+          }
+          onFilePatch={handleFilePatch}
+          appTitle={fileData?.title ?? workspace?.title ?? null}
+          isImproving={isImproving}
+          isProUser={userPlan === "pro"}
+        />
+      </div>
+    </>
   );
 }
