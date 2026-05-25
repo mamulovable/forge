@@ -356,7 +356,7 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
             <PricingModal reason="upgrade">
               <span className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-white/40 hover:text-white/70">
                 <Wand2 className="h-3.5 w-3.5" />
-                Improve
+                Improve with Agent (Pro)
               </span>
             </PricingModal>
           )}

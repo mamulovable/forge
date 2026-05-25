@@ -54,10 +54,10 @@ export const PRICING_PLANS = [
     features: [
       "150 generations / month",
       "Priority AI (faster response)",
-      "Early access to new features",
       "Live preview",
       "Export to zip",
       "Image uploads",
+      "Access to Forge Pro Agent",
     ],
   },
 ] as const;
