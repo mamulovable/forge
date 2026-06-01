@@ -316,4 +316,4 @@ export async function POST(request: NextRequest) {
 }
 
 export const runtime = "nodejs";
-export const maxDuration = 800; // for vercel - 800s on Fluid
+export const maxDuration = 300; // for vercel - 300s on Fluid
