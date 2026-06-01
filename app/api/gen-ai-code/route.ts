@@ -39,7 +39,7 @@ async function validateDependencies(
     Object.entries(deps).map(async ([pkg, version]) => {
       try {
         const res = await fetch(`https://registry.npmjs.org/${pkg}/latest`, {
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(1500),
         });
         if (res.ok) valid[pkg] = version;
       } catch {
