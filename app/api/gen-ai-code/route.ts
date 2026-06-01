@@ -1,4 +1,4 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { db } from "@/lib/prisma";
@@ -124,18 +124,6 @@ export async function POST(request: NextRequest) {
   const { userId: clerkId } = await auth();
   if (!clerkId) {
     return Response.json({ message: "Unauthorized" }, { status: 401 });
-  }
-
-  // ── Restrict Gemini API key to allowed email (temporary) ───────────────────────────────
-  const clerkUser = await currentUser();
-  const allowedEmail = clerkUser?.emailAddresses?.find(
-    (e) => e.emailAddress === "piyushagarwalvo@gmail.com"
-  );
-  if (!allowedEmail) {
-    return Response.json(
-      { message: "Gemini API access is restricted" },
-      { status: 403 }
-    );
   }
 
   const body = await request.json();
