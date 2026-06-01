@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "app/api/gen-ai-code/route.ts": {
+      "fluid": true
+    },
+    "app/api/improve/route.ts": {
+      "fluid": true
+    }
+  }
+}

@@ -14,8 +14,6 @@ function sseEvent(type: string, payload: object): string {
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
-export const maxDuration = 60;
-
 export async function POST(request: NextRequest) {
   const { userId: clerkId } = await auth();
   if (!clerkId)
@@ -245,3 +243,6 @@ RULES:
     },
   });
 }
+
+export const runtime = "nodejs";
+export const maxDuration = 800; // for vercel - 800s on Fluid
