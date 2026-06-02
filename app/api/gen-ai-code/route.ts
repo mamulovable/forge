@@ -139,9 +139,16 @@ export async function POST(request: NextRequest) {
 
   // ── Arcjet: rate limit, prompt injection, sensitive info ──────────────────
   // detectPromptInjectionMessage requires the actual user text to inspect.
+
+  const arcjetReq = new Request(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: JSON.stringify(body),
+  });
+
   const lastUserMessage =
     [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const decision = await aj.protect(request, {
+  const decision = await aj.protect(arcjetReq, {
     requested: 1,
     userId: clerkId,
     detectPromptInjectionMessage: lastUserMessage,
