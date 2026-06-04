@@ -39,7 +39,7 @@ export default async function Header() {
               <PricingModal>
                 <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 text-xs text-white/70">
                   <Zap className="h-3 w-3 fill-white/70" />
-                  {user.credits} / {PLANS[user?.plan as Plan].credits} credits
+                  {user.credits} credits
                 </span>
               </PricingModal>
             )}
