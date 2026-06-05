@@ -153,6 +153,7 @@ export async function POST(request: NextRequest) {
     userId: clerkId,
     detectPromptInjectionMessage: lastUserMessage,
   });
+
   if (decision.isDenied()) {
     return Response.json(
       { message: decision.reason?.type ?? "Request blocked" },
