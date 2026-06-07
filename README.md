@@ -2,7 +2,7 @@
 
 ## https://www.youtube.com/watch?v=UUK93oW0SaA
 
-<img width="1466" height="920" alt="forge landing" src="https://github.com/user-attachments/assets/df343943-592e-48a5-83bb-a65f80eb6028" />
+<img width="1280" height="720" alt="1" src="https://github.com/user-attachments/assets/0170ace8-9451-40b0-8d8e-d5534a05bba1" />
 
 ---
 
