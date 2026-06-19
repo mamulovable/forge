@@ -417,6 +417,7 @@ export function WorkspaceClient({
           appTitle={fileData?.title ?? workspace?.title ?? null}
           isImproving={isImproving}
           isProUser={userPlan === "pro"}
+          workspaceId={workspaceId}
         />
       </div>
 

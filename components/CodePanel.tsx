@@ -19,6 +19,7 @@ import {
   Bot,
   Loader2,
   ArrowUp,
+  ExternalLink,
 } from "lucide-react";
 import { RingLoader } from "react-spinners";
 import JSZip from "jszip";
@@ -26,6 +27,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PricingModal } from "@/components/PricingModal";
 import { cn } from "@/lib/utils";
+import { writePreviewSnapshot } from "@/lib/preview-storage";
+import { BASE_DEPENDENCIES } from "@/lib/sandpack-setup";
 import type { FileData, StatusStep } from "@/types/workspace";
 
 // ─── Placeholder ──────────────────────────────────────────────────────────────
@@ -53,28 +56,7 @@ const PLACEHOLDER_FILES = {
 };
 
 // ─── Base dependencies ────────────────────────────────────────────────────────
-
-const BASE_DEPENDENCIES: Record<string, string> = {
-  "react-is": "latest",
-  "react-router-dom": "latest",
-  "lucide-react": "latest",
-  recharts: "latest",
-  "date-fns": "latest",
-  "framer-motion": "latest",
-  "react-hook-form": "latest",
-  "@hookform/resolvers": "latest",
-  zod: "latest",
-  "@radix-ui/react-dialog": "latest",
-  "@radix-ui/react-dropdown-menu": "latest",
-  "@radix-ui/react-tabs": "latest",
-  "@radix-ui/react-tooltip": "latest",
-  "@radix-ui/react-accordion": "latest",
-  "@radix-ui/react-select": "latest",
-  axios: "latest",
-  clsx: "latest",
-  "class-variance-authority": "latest",
-  "tailwind-merge": "latest",
-};
+// Re-exported from lib/sandpack-setup for ZIP export compatibility.
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,9 +72,8 @@ interface CodePanelProps {
   appTitle: string | null;
   isImproving: boolean;
   isProUser: boolean;
+  workspaceId: string | null;
 }
-
-// ─── SandpackInner ────────────────────────────────────────────────────────────
 // Lives inside SandpackProvider so it can call useSandpack().
 // Receives fileData as a prop and uses updateFile() to push code changes
 // into the live Sandpack instance without remounting the provider.
@@ -108,6 +89,7 @@ function SandpackInner({
   appTitle,
   isImproving,
   isProUser,
+  workspaceId,
 }: {
   isGenerating: boolean;
   statusLog: StatusStep[];
@@ -119,6 +101,7 @@ function SandpackInner({
   appTitle: string | null;
   isImproving: boolean;
   isProUser: boolean;
+  workspaceId: string | null;
 }) {
   const { sandpack, listen } = useSandpack();
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -286,6 +269,34 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
     }
   };
 
+  const handleOpenPreviewTab = () => {
+    if (!fileData) return;
+
+    const files: Record<string, { code: string }> = {};
+    for (const [path, fileObj] of Object.entries(sandpack.files)) {
+      const code =
+        typeof fileObj === "object" && fileObj !== null && "code" in fileObj
+          ? (fileObj as { code: string }).code
+          : "";
+      files[path] = { code };
+    }
+
+    writePreviewSnapshot({
+      files,
+      dependencies: fileData.dependencies,
+      title: appTitle ?? fileData.title,
+    });
+
+    const params = new URLSearchParams();
+    if (workspaceId) params.set("workspaceId", workspaceId);
+    const query = params.toString();
+    window.open(
+      query ? `/preview?${query}` : "/preview",
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
   const currentStepLabel =
     statusLog[statusLog.length - 1]?.label ?? "Generating…";
 
@@ -381,7 +392,15 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
 
           <Button
             variant="ghost"
-            onClick={handleExportZip}
+            onClick={handleOpenPreviewTab}
+            disabled={!fileData || isGenerating || isImproving}
+            title="Open preview in new tab"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Open
+          </Button>
+
+          <Button
             disabled={isExporting || !fileData}
           >
             {isExporting ? (
@@ -484,6 +503,7 @@ export function CodePanel({
   appTitle,
   isImproving,
   isProUser,
+  workspaceId,
 }: CodePanelProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("preview");
 
@@ -528,6 +548,7 @@ export function CodePanel({
           appTitle={appTitle}
           isImproving={isImproving}
           isProUser={isProUser}
+          workspaceId={workspaceId}
         />
       </SandpackProvider>
     </div>

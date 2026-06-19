@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 const isProtectedRoute = createRouteMatcher([
   "/workspace(.*)",
   "/projects(.*)",
+  "/preview(.*)",
 ]);
 
 // ─── Global Arcjet client ─────────────────────────────────────────────────────

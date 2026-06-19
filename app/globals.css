@@ -203,3 +203,23 @@
   height: 100% !important;
   overflow-y: auto !important;
 }
+
+/* Full-screen preview page */
+.forge-preview-fullscreen,
+.forge-preview-fullscreen .forge-sandpack-provider,
+.forge-preview-fullscreen .forge-sandpack-preview {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.forge-preview-fullscreen .sp-preview-container,
+.forge-preview-fullscreen .sp-preview-iframe {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  width: 100% !important;
+}
