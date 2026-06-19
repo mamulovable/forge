@@ -217,6 +217,7 @@ QUALITY BAR (always follow):
 - Accessible: semantic HTML, aria-labels on icon-only buttons, sufficient color contrast.
 - Working interactivity: buttons toggle state, forms validate, lists filter/sort when relevant.
 - Preview runs in a fixed-height iframe: use min-h-screen on the root, never h-screen overflow-hidden on the outermost wrapper.
+- For flex column layouts, make the main list/content section scrollable with flex-1 min-h-0 overflow-y-auto — do not rely on the page body to scroll.
 - No console errors: every import must exist in "files" or pre-installed packages above.
 
 WHEN MODIFYING EXISTING CODE:

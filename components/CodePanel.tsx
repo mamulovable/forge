@@ -5,7 +5,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   SandpackProvider,
-  SandpackLayout,
   SandpackCodeEditor,
   SandpackPreview,
   SandpackFileExplorer,
@@ -24,8 +23,9 @@ import {
 import { RingLoader } from "react-spinners";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PricingModal } from "@/components/PricingModal";
+import { cn } from "@/lib/utils";
 import type { FileData, StatusStep } from "@/types/workspace";
 
 // ─── Placeholder ──────────────────────────────────────────────────────────────
@@ -126,41 +126,6 @@ function SandpackInner({
   const [improveInput, setImproveInput] = useState("");
   const [showImproveInput, setShowImproveInput] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
-
-  const fixPreviewScrolling = () => {
-    const iframe = previewRef.current?.querySelector("iframe");
-    const doc = iframe?.contentDocument;
-    if (!iframe || !doc?.head) return;
-
-    // Clear any prior inline resize that caused black empty space below content
-    iframe.style.height = "";
-    iframe.style.minHeight = "";
-
-    if (!doc.getElementById("forge-preview-scroll-fix")) {
-      const style = doc.createElement("style");
-      style.id = "forge-preview-scroll-fix";
-      style.textContent = `
-        html, body {
-          margin: 0 !important;
-          overflow-x: hidden !important;
-          overflow-y: auto !important;
-          height: 100% !important;
-        }
-        #root {
-          min-height: 100%;
-        }
-        #root > * {
-          height: auto !important;
-          min-height: 100% !important;
-          max-height: none !important;
-          overflow-x: hidden !important;
-          overflow-y: visible !important;
-        }
-      `;
-      doc.head.appendChild(style);
-    }
-  };
 
   // Push file content updates into Sandpack without remounting.
   // This runs whenever fileData changes (e.g. after improve completes).
@@ -204,7 +169,6 @@ function SandpackInner({
       }
       if (msg.type === "success") {
         setPreviewError(null);
-        fixPreviewScrolling();
       }
     });
     return () => unsubscribeRef.current?.();
@@ -213,24 +177,6 @@ function SandpackInner({
   useEffect(() => {
     if (isGenerating) setPreviewError(null);
   }, [isGenerating]);
-
-  useEffect(() => {
-    if (activeTab !== "preview") return;
-
-    fixPreviewScrolling();
-
-    const iframe = previewRef.current?.querySelector("iframe");
-    const doc = iframe?.contentDocument;
-    if (!doc?.body) return;
-
-    const observer = new MutationObserver(() => {
-      fixPreviewScrolling();
-    });
-    observer.observe(doc.body, { childList: true, subtree: true });
-
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, fileData?.files]);
 
   const handleImproveSubmit = async () => {
     const trimmed = improveInput.trim();
@@ -347,10 +293,10 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
     <Tabs
       value={activeTab}
       onValueChange={(v) => setActiveTab(v as ActiveTab)}
-      className="flex h-full w-full min-w-0 min-h-0 flex-col gap-0"
+      className="flex h-full min-h-0 w-full flex-1 flex-col gap-0"
     >
       {/* Tabs + Actions bar */}
-      <div className="flex items-center justify-between border-b border-white/6 px-2">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/6 px-2">
         <TabsList
           variant="line"
           className="h-auto gap-0 rounded-none bg-transparent p-0"
@@ -448,8 +394,8 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
         </div>
       </div>
 
-      {/* Content area */}
-      <div className="relative h-full min-h-0 flex-1 overflow-hidden">
+      {/* Content area — must flex-1 so preview fills remaining height */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {(isGenerating || isImproving) && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-[#0a0a0a]/85 backdrop-blur-sm">
             <RingLoader color="#60a5fa" size={64} speedMultiplier={0.8} />
@@ -464,53 +410,36 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
           </div>
         )}
 
-        <SandpackLayout
-          className="forge-sandpack-layout !h-full !w-full !min-h-0"
-          style={{
-            height: "100%",
-            width: "100%",
-            border: "none",
-            borderRadius: 0,
-            background: "transparent",
-            flexWrap: "nowrap",
-          }}
-        >
-          <TabsContent
-            value="preview"
-            keepMounted
-            className="mt-0 h-full min-h-0 w-full flex-1 overflow-hidden"
-          >
-            <div ref={previewRef} className="h-full min-h-0 w-full">
-              <SandpackPreview
-                className="forge-sandpack-preview"
-                style={{ height: "100%", width: "100%" }}
-                showOpenInCodeSandbox={false}
-              />
-            </div>
-          </TabsContent>
+        <SandpackPreview
+          className={cn(
+            "forge-sandpack-preview h-full w-full",
+            activeTab !== "preview" && "hidden"
+          )}
+          showOpenInCodeSandbox={false}
+        />
 
-          <TabsContent
-            value="code"
-            keepMounted
-            className="mt-0 flex h-full min-h-0 w-full flex-1 overflow-hidden"
-          >
-            <SandpackFileExplorer
-              style={{
-                height: "100%",
-                width: "180px",
-                borderRight: "0.5px solid rgba(255,255,255,0.08)",
-              }}
-            />
-            <SandpackCodeEditor
-              style={{ height: "100%", flex: 1 }}
-              showTabs
-              showLineNumbers
-              showInlineErrors
-              closableTabs
-              readOnly
-            />
-          </TabsContent>
-        </SandpackLayout>
+        <div
+          className={cn(
+            "forge-sandpack-code-tab h-full w-full",
+            activeTab !== "code" && "hidden"
+          )}
+        >
+          <SandpackFileExplorer
+            style={{
+              height: "100%",
+              width: "180px",
+              borderRight: "0.5px solid rgba(255,255,255,0.08)",
+            }}
+          />
+          <SandpackCodeEditor
+            style={{ height: "100%", flex: 1 }}
+            showTabs
+            showLineNumbers
+            showInlineErrors
+            closableTabs
+            readOnly
+          />
+        </div>
       </div>
 
       {/* Preview error banner — uses onFixError (Gemini), not onImprove (Cline) */}
@@ -574,7 +503,7 @@ export function CodePanel({
   const filePathKey = Object.keys(files).sort().join("|");
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
+    <div className="forge-sandpack-root flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
       <SandpackProvider
         key={filePathKey}
         template="react"
@@ -586,7 +515,7 @@ export function CodePanel({
           recompileMode: "delayed",
           recompileDelay: 500,
         }}
-        className="flex h-full w-full min-h-0 flex-1 flex-col"
+        className="forge-sandpack-provider"
       >
         <SandpackInner
           isGenerating={isGenerating}
