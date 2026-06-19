@@ -152,3 +152,50 @@
     transform: translateX(200%);
   }
 }
+
+/* Sandpack — fill available panel */
+.forge-sandpack-layout,
+.forge-sandpack-layout.sp-layout {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex-wrap: nowrap !important;
+}
+
+.forge-sandpack-layout [data-hidden] {
+  display: none !important;
+}
+
+.forge-sandpack-layout .sp-stack {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.forge-sandpack-preview.sp-preview,
+.forge-sandpack-preview {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  width: 100% !important;
+}
+
+.forge-sandpack-preview .sp-preview-container {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  width: 100% !important;
+}
+
+.forge-sandpack-preview .sp-preview-iframe {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-height: 100% !important;
+  border: 0 !important;
+}

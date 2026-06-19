@@ -2,10 +2,11 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { MessageSquare, Eye } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
 import { CodePanel } from "./CodePanel";
-import { MobileBlocker } from "./MobileBlocker";
 import { MIN_CREDITS_TO_GENERATE } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type {
   Message,
@@ -44,6 +45,8 @@ function parseFileData(raw: unknown): FileData | null {
   return raw as FileData;
 }
 
+type MobilePanel = "chat" | "preview";
+
 export function WorkspaceClient({
   initialPrompt,
   workspace,
@@ -64,6 +67,9 @@ export function WorkspaceClient({
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusLog, setStatusLog] = useState<StatusStep[]>([]);
   const [isImproving, setIsImproving] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(
+    parseFileData(workspace?.fileData) ? "preview" : "chat"
+  );
 
   // AbortController refs — used to cancel in-flight streams
   const generateAbortRef = useRef<AbortController | null>(null);
@@ -175,6 +181,7 @@ export function WorkspaceClient({
                 setWorkspaceId(event.workspaceId);
                 setFileData(event.fileData);
                 setCredits(event.creditsRemaining);
+                setMobilePanel("preview");
                 setMessages((prev) => [
                   ...prev,
                   { role: "assistant", content: event.assistantMessage },
@@ -304,6 +311,7 @@ export function WorkspaceClient({
                 // Apply all patches at once now that the stream is complete
                 setFileData(event.fileData);
                 setCredits(event.creditsRemaining);
+                setMobilePanel("preview");
                 // Replace thinking text with clean summary
                 setMessages((prev) => {
                   const updated = [...prev];
@@ -350,14 +358,14 @@ export function WorkspaceClient({
   }, []);
 
   return (
-    <>
-      {/* Mobile blocker — visible only on small screens */}
-      <div className="md:hidden">
-        <MobileBlocker />
-      </div>
-
-      {/* Workspace — visible only on md+ screens */}
-      <div className="hidden md:flex h-[calc(100vh-3.5rem)] overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden bg-[#0a0a0a] lg:flex-row">
+      <div
+        className={cn(
+          "flex min-h-0 flex-col",
+          "w-full flex-1 lg:flex-none lg:w-[320px] lg:shrink-0",
+          mobilePanel !== "chat" && "hidden lg:flex"
+        )}
+      >
         <ChatPanel
           isImproving={isImproving}
           messages={messages}
@@ -371,7 +379,16 @@ export function WorkspaceClient({
           workspaceId={workspaceId}
           appTitle={fileData?.title ?? workspace?.title ?? null}
         />
-        <div className="w-px shrink-0 bg-white/6" />
+      </div>
+
+      <div className="hidden w-px shrink-0 bg-white/6 lg:block" />
+
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col",
+          mobilePanel !== "preview" && "hidden lg:flex"
+        )}
+      >
         <CodePanel
           fileData={fileData}
           isGenerating={isGenerating}
@@ -388,6 +405,35 @@ export function WorkspaceClient({
           isProUser={userPlan === "pro"}
         />
       </div>
-    </>
+
+      <div className="flex shrink-0 border-t border-white/6 bg-[#0d0d0d] pb-[env(safe-area-inset-bottom)] lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobilePanel("chat")}
+          className={cn(
+            "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
+            mobilePanel === "chat"
+              ? "text-white"
+              : "text-white/40 hover:text-white/60"
+          )}
+        >
+          <MessageSquare className="h-4 w-4" />
+          Chat
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobilePanel("preview")}
+          className={cn(
+            "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
+            mobilePanel === "preview"
+              ? "text-white"
+              : "text-white/40 hover:text-white/60"
+          )}
+        >
+          <Eye className="h-4 w-4" />
+          Preview
+        </button>
+      </div>
+    </div>
   );
 }

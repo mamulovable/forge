@@ -293,7 +293,7 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
     <Tabs
       value={activeTab}
       onValueChange={(v) => setActiveTab(v as ActiveTab)}
-      className="flex h-full flex-col gap-0"
+      className="flex h-full w-full min-w-0 flex-col gap-0"
     >
       {/* Tabs + Actions bar */}
       <div className="flex items-center justify-between border-b border-white/6 px-2">
@@ -395,7 +395,7 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
       </div>
 
       {/* Content area */}
-      <div className="relative flex-1 overflow-hidden h-full">
+      <div className="relative h-full min-h-0 flex-1 overflow-hidden">
         {(isGenerating || isImproving) && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-[#0a0a0a]/85 backdrop-blur-sm">
             <RingLoader color="#60a5fa" size={64} speedMultiplier={0.8} />
@@ -411,11 +411,14 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
         )}
 
         <SandpackLayout
+          className="forge-sandpack-layout !h-full !w-full !min-h-0"
           style={{
-            height: "100vh",
+            height: "100%",
+            width: "100%",
             border: "none",
             borderRadius: 0,
             background: "transparent",
+            flexWrap: "nowrap",
           }}
         >
           <TabsContent
@@ -424,7 +427,8 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
             className="mt-0 h-full w-full"
           >
             <SandpackPreview
-              style={{ height: "89%" }}
+              className="forge-sandpack-preview"
+              style={{ height: "100%", width: "100%" }}
               showOpenInCodeSandbox={false}
             />
           </TabsContent>
@@ -436,13 +440,13 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
           >
             <SandpackFileExplorer
               style={{
-                height: "90%",
+                height: "100%",
                 width: "180px",
                 borderRight: "0.5px solid rgba(255,255,255,0.08)",
               }}
             />
             <SandpackCodeEditor
-              style={{ height: "90%", flex: 1 }}
+              style={{ height: "100%", flex: 1 }}
               showTabs
               showLineNumbers
               showInlineErrors
@@ -514,7 +518,7 @@ export function CodePanel({
   const filePathKey = Object.keys(files).sort().join("|");
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
       <SandpackProvider
         key={filePathKey}
         template="react"
@@ -526,6 +530,7 @@ export function CodePanel({
           recompileMode: "delayed",
           recompileDelay: 500,
         }}
+        className="flex h-full w-full min-h-0 flex-1 flex-col"
       >
         <SandpackInner
           isGenerating={isGenerating}
