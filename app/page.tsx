@@ -7,16 +7,9 @@ import { CheckoutButton } from "@clerk/nextjs/experimental";
 import { ArrowRight, Zap, ChevronRight, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { HoleBackground } from "@/components/animate-ui/components/backgrounds/hole";
 import { Badge } from "@/components/ui/badge";
 import { FEATURES, PLACEHOLDERS, STEPS, SUGGESTIONS } from "@/lib/data";
 import { PRICING_PLANS } from "@/lib/constants";
-import {
-  BlueTitle,
-  GrayTitle,
-  SectionHeading,
-  SectionLabel,
-} from "@/components/reusables";
 
 export default function LandingPage() {
   const { isSignedIn, has } = useAuth();
@@ -60,32 +53,26 @@ export default function LandingPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] selection:bg-white/20">
+    <main className="min-h-screen bg-gradient-to-b from-[#E4F2FA] via-white to-[#FFE8D6] selection:bg-orange-200/40">
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="relative flex flex-col items-center overflow-hidden px-4 pb-24 pt-40 text-center">
-        <HoleBackground
-          strokeColor="rgba(255,255,255,0.05)" // blur
-          className="absolute inset-0 h-full w-full"
-          style={{
-            maskImage:
-              "linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.5) 50%, transparent 100%)",
-            WebkitMaskImage:
-              "linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.5) 50%, transparent 100%)",
-          }}
-        />
-
-        <Badge variant="outline" className="gap-2 p-4 backdrop-blur-sm">
+      <section className="relative flex flex-col items-center px-4 pb-24 pt-32 text-center sm:pt-36">
+        <Badge
+          variant="outline"
+          className="z-10 gap-2 border-neutral-200 bg-white/80 p-4 text-neutral-600 backdrop-blur-sm"
+        >
           <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
           Powered by Agentic AI
         </Badge>
 
-        <h1 className="mx-auto max-w-3xl text-balance font-serif text-5xl leading-tight tracking-tight sm:text-6xl lg:text-7xl z-10">
-          <GrayTitle>Forge your dream</GrayTitle>
+        <h1 className="z-10 mx-auto mt-6 max-w-3xl text-balance font-serif text-5xl leading-tight tracking-tight text-neutral-900 sm:text-6xl lg:text-7xl">
+          <span className="text-neutral-900">Dreamera your dream</span>
           <br />
-          <BlueTitle>from a single prompt.</BlueTitle>
+          <span className="bg-linear-to-br from-[#FF8A4C] via-[#FF6B2C] to-[#E85A1A] bg-clip-text font-serif text-transparent">
+            from a single prompt.
+          </span>
         </h1>
 
-        <p className="mx-auto mt-6 max-w-xl text-balance text-base leading-relaxed text-white/40 z-10">
+        <p className="z-10 mx-auto mt-6 max-w-xl text-balance text-base leading-relaxed text-neutral-600 sm:text-lg">
           Describe what you want to build. AI writes the code, picks the
           packages, and renders a live preview all inside your browser.
         </p>
@@ -93,10 +80,10 @@ export default function LandingPage() {
         <div className="relative mx-auto mt-12 w-full max-w-2xl">
           <div
             className={cn(
-              "rounded-2xl border bg-[#111111] duration-200",
+              "rounded-2xl border bg-white shadow-xl shadow-neutral-200/60 transition-all duration-200",
               isFocused
-                ? "border-white/20 ring-1 ring-white/8"
-                : "border-white/8"
+                ? "border-neutral-300 ring-2 ring-orange-200/50"
+                : "border-neutral-200"
             )}
           >
             <textarea
@@ -108,12 +95,12 @@ export default function LandingPage() {
               onBlur={() => setIsFocused(false)}
               placeholder={PLACEHOLDERS[placeholderIndex]}
               rows={1}
-              className="w-full resize-none bg-transparent px-5 pb-4 pt-5 text-sm placeholder:text-white/20 focus:outline-none sm:text-base"
+              className="w-full resize-none bg-transparent px-5 pb-4 pt-5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none sm:text-base"
               style={{ minHeight: 56, maxHeight: 200 }}
             />
 
-            <div className="flex items-center justify-between border-t border-white/6 px-4 py-2.5">
-              <span className="text-xs text-white/20">
+            <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-2.5">
+              <span className="text-xs text-neutral-400">
                 Press ⏎ to generate · Shift+⏎ for new line
               </span>
 
@@ -121,7 +108,7 @@ export default function LandingPage() {
                 <Button
                   onClick={handleSubmit}
                   disabled={!prompt.trim()}
-                  className="h-8 rounded-full px-5 font-semibold"
+                  className="h-8 rounded-full bg-[#FF6B2C] px-5 font-semibold text-white hover:bg-[#E85A1A]"
                   variant={prompt.trim() ? "default" : "secondary"}
                 >
                   Generate
@@ -129,7 +116,7 @@ export default function LandingPage() {
                 </Button>
               ) : (
                 <SignInButton mode="modal">
-                  <Button className="h-8 rounded-full bg-white px-5 font-semibold">
+                  <Button className="h-8 rounded-full bg-[#FF6B2C] px-5 font-semibold text-white hover:bg-[#E85A1A]">
                     Generate
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Button>
@@ -143,7 +130,7 @@ export default function LandingPage() {
               <button
                 key={s}
                 onClick={() => handleSuggestion(s)}
-                className="rounded-full border border-white/8 bg-white/4 px-3 py-1.5 text-xs text-white/40 hover:border-white/15 hover:bg-white/8 hover:text-white/70"
+                className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 shadow-sm transition-all hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900"
               >
                 {s}
               </button>
@@ -151,68 +138,73 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <p className="mt-10 text-xs text-white/20">
+        <p className="mt-10 text-xs text-neutral-400">
           No credit card required · 10 free generations on sign up
         </p>
       </section>
 
       {/* BROWSER MOCKUP */}
       <section className="px-4 pb-32">
-        <div className="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-white/8 bg-[#0f0f0f] shadow-2xl shadow-black/60">
-          <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
+        <div className="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-neutral-200/50">
+          <div className="flex items-center gap-2 border-b border-neutral-100 px-4 py-3">
             <div className="flex gap-1.5">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-3 w-3 rounded-full bg-white/10" />
+                <div
+                  key={i}
+                  className="h-3 w-3 rounded-full bg-neutral-200"
+                />
               ))}
             </div>
 
-            <div className="mx-auto flex h-6 w-64 items-center justify-center rounded-md bg-white/5 px-3">
-              <span className="text-xs text-white/25">forge.app/workspace</span>
+            <div className="mx-auto flex h-6 w-64 items-center justify-center rounded-md bg-neutral-100 px-3">
+              <span className="text-xs text-neutral-400">
+                dreamera.app/workspace
+              </span>
             </div>
           </div>
 
           <div className="flex h-105">
             {/* Chat panel */}
-            <div className="flex w-80 flex-col border-r border-white/6 bg-[#0d0d0d]">
-              <div className="border-b border-white/6 px-4 py-3">
-                <p className="text-xs uppercase tracking-wider text-white/30">
+            <div className="flex w-80 flex-col border-r border-neutral-100 bg-neutral-50">
+              <div className="border-b border-neutral-100 px-4 py-3">
+                <p className="text-xs uppercase tracking-wider text-neutral-400">
                   Chat
                 </p>
               </div>
 
               <div className="flex-1 space-y-4 px-4 py-4">
                 <div className="flex justify-end">
-                  <div className="max-w-55 rounded-2xl rounded-br-sm bg-white/10 px-3.5 py-2.5">
-                    <p className="text-xs text-white/80">
+                  <div className="max-w-55 rounded-2xl rounded-br-sm bg-neutral-900 px-3.5 py-2.5">
+                    <p className="text-xs text-white/90">
                       Build a kanban board with 3 columns and drag-and-drop
                     </p>
                   </div>
                 </div>
 
                 <div className="flex gap-2.5">
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white">
-                    <Zap className="h-3 w-3 fill-black text-black" />
+                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#FF6B2C]">
+                    <Zap className="h-3 w-3 fill-white text-white" />
                   </div>
 
-                  <div className="rounded-2xl rounded-tl-sm bg-white/5 px-3.5 py-2.5">
-                    <p className="text-xs text-white/60">
+                  <div className="rounded-2xl rounded-tl-sm border border-neutral-200 bg-white px-3.5 py-2.5">
+                    <p className="text-xs text-neutral-600">
                       I&apos;ll build a Kanban board with Todo, In Progress, and
                       Done columns. I&apos;ll use{" "}
-                      <code className="text-blue-400/80">@dnd-kit/core</code>{" "}
+                      <code className="text-orange-600/80">@dnd-kit/core</code>{" "}
                       for smooth drag-and-drop…
                     </p>
                   </div>
                 </div>
 
                 <div className="flex gap-2.5">
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white">
-                    <Zap className="h-3 w-3 fill-black text-black" />
+                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#FF6B2C]">
+                    <Zap className="h-3 w-3 fill-white text-white" />
                   </div>
-                  <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm bg-white/5 px-3.5 py-3">
+                  <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm border border-neutral-200 bg-white px-3.5 py-3">
                     {[0, 0.15, 0.3].map((delay) => (
                       <span
                         key={delay}
-                        className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/40"
+                        className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400"
                         style={{ animationDelay: `${delay}s` }}
                       />
                     ))}
@@ -220,35 +212,35 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="border-t border-white/6 px-3 py-3">
-                <div className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2">
-                  <span className="flex-1 text-xs text-white/20">
+              <div className="border-t border-neutral-100 px-3 py-3">
+                <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2">
+                  <span className="flex-1 text-xs text-neutral-400">
                     Ask AI to modify…
                   </span>
-                  <ArrowRight className="h-3.5 w-3.5 text-white/20" />
+                  <ChevronRight className="h-3.5 w-3.5 text-neutral-300" />
                 </div>
               </div>
             </div>
 
             <div className="flex flex-1 flex-col">
-              <div className="flex items-center gap-1 border-b border-white/6 px-4">
-                <button className="border-b-2 border-blue-400 px-3 py-2.5 text-xs text-white">
+              <div className="flex items-center gap-1 border-b border-neutral-100 px-4">
+                <button className="border-b-2 border-[#FF6B2C] px-3 py-2.5 text-xs font-medium text-neutral-900">
                   Preview
                 </button>
-                <button className="px-3 py-2.5 text-xs text-white/30">
+                <button className="px-3 py-2.5 text-xs text-neutral-400">
                   Code
                 </button>
               </div>
 
-              <div className="flex flex-1 gap-3 overflow-hidden bg-[#141414] p-5">
+              <div className="flex flex-1 gap-3 overflow-hidden bg-neutral-50 p-5">
                 {["Todo", "In Progress", "Done"].map((col, ci) => (
                   <div key={col} className="flex w-1/3 flex-col gap-2">
                     <div className="mb-1 flex items-center justify-between">
-                      <span className="text-xs uppercase tracking-wider text-white/40">
+                      <span className="text-xs uppercase tracking-wider text-neutral-500">
                         {col}
                       </span>
 
-                      <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-xs text-white/30">
+                      <span className="rounded-full bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-500">
                         {[3, 2, 1][ci]}
                       </span>
                     </div>
@@ -256,13 +248,13 @@ export default function LandingPage() {
                     {Array.from({ length: [3, 2, 1][ci] }).map((_, i) => (
                       <div
                         key={i}
-                        className="rounded-lg border border-white/8 bg-[#1a1a1a] p-2.5"
+                        className="rounded-lg border border-neutral-200 bg-white p-2.5 shadow-sm"
                       >
                         <div
-                          className="mb-1.5 h-2 rounded-full bg-white/15"
+                          className="mb-1.5 h-2 rounded-full bg-neutral-200"
                           style={{ width: `${60 + i * 15}%` }}
                         />
-                        <div className="h-1.5 w-3/4 rounded-full bg-white/8" />
+                        <div className="h-1.5 w-3/4 rounded-full bg-neutral-100" />
                       </div>
                     ))}
                   </div>
@@ -276,21 +268,29 @@ export default function LandingPage() {
       {/* ── FEATURES ──────────────────────────────────────────────────────── */}
       <section className="px-4 pb-32">
         <div className="mx-auto mb-14 max-w-5xl text-center">
-          <SectionLabel>Everything you need</SectionLabel>
-          <SectionHeading gray="From prompt" blue="to production." />
+          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-[#FF6B2C]">
+            Everything you need
+          </p>
+          <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-black">
+            From prompt
+            <br />
+            <span className="text-[#FF6B2C]">to production.</span>
+          </h2>
         </div>
 
-        <div className="mx-auto grid max-w-5xl grid-cols-1 gap-px overflow-hidden rounded-2xl border border-white/6 bg-white/6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(({ icon: Icon, label, desc }) => (
             <div
               key={label}
-              className="group bg-[#0a0a0a] p-7 hover:bg-[#0f0f0f]"
+              className="group rounded-2xl border border-neutral-200 bg-white p-7 shadow-sm transition-shadow hover:shadow-md"
             >
-              <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg border border-white/8 bg-white/4 group-hover:border-white/15 group-hover:bg-white/8">
-                <Icon className="h-4 w-4 text-white/60 group-hover:text-blue-400/70" />
+              <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 group-hover:border-orange-200 group-hover:bg-orange-50">
+                <Icon className="h-4 w-4 text-neutral-600 group-hover:text-[#FF6B2C]" />
               </div>
-              <p className="mb-2 text-sm font-semibold">{label}</p>
-              <p className="text-sm leading-relaxed text-white/40">{desc}</p>
+              <p className="mb-2 text-sm font-semibold text-neutral-900">
+                {label}
+              </p>
+              <p className="text-sm leading-relaxed text-neutral-500">{desc}</p>
             </div>
           ))}
         </div>
@@ -299,31 +299,37 @@ export default function LandingPage() {
       {/* HOW IT WORKS */}
       <section className="px-4 pb-32">
         <div className="mx-auto mb-14 max-w-3xl text-center">
-          <SectionLabel>How it works</SectionLabel>
-          <SectionHeading gray="Four steps" blue="to a working app." />
+          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-[#FF6B2C]">
+            How it works
+          </p>
+          <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-black">
+            Four steps
+            <br />
+            <span className="text-[#FF6B2C]">to a working app.</span>
+          </h2>
         </div>
 
         <div className="mx-auto max-w-3xl">
           {STEPS.map((step, i) => (
             <div key={step.number} className="flex gap-6">
               <div className="flex flex-col items-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/4">
-                  <span className="font-mono text-xs font-semibold text-white/50">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm">
+                  <span className="font-mono text-xs font-semibold text-neutral-500">
                     {step.number}
                   </span>
                 </div>
 
                 {i < STEPS.length - 1 && (
-                  <div className="mt-2 h-full w-px bg-white/6" />
+                  <div className="mt-2 h-full w-px bg-neutral-200" />
                 )}
               </div>
 
               <div className="pb-10 pt-1.5">
-                <p className="mb-1.5 text-sm font-semibold sm:text-base">
+                <p className="mb-1.5 text-sm font-semibold text-neutral-900 sm:text-base">
                   {step.label}
                 </p>
 
-                <p className="text-sm leading-relaxed text-white/40">
+                <p className="text-sm leading-relaxed text-neutral-500">
                   {step.desc}
                 </p>
               </div>
@@ -335,10 +341,16 @@ export default function LandingPage() {
       {/* PRICING */}
       <section className="px-4 pb-32">
         <div className="mx-auto mb-14 max-w-5xl text-center">
-          <SectionLabel>Simple pricing</SectionLabel>
-          <SectionHeading gray="Start free," blue="scale when ready." />
+          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-[#FF6B2C]">
+            Simple pricing
+          </p>
+          <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-black">
+            Start free,
+            <br />
+            <span className="text-[#FF6B2C]">scale when ready.</span>
+          </h2>
 
-          <p className="mx-auto mt-4 max-w-sm text-sm text-white/35">
+          <p className="mx-auto mt-4 max-w-sm text-sm text-neutral-500">
             No credit card required. Upgrade or downgrade anytime.
           </p>
         </div>
@@ -354,8 +366,8 @@ export default function LandingPage() {
               ? has?.({ plan: "pro" })
                 ? "pro"
                 : has?.({ plan: "starter" })
-                ? "starter"
-                : "free"
+                  ? "starter"
+                  : "free"
               : null;
 
             const isActive = isSignedIn && activePlanKey === plan.key;
@@ -369,83 +381,79 @@ export default function LandingPage() {
               <div
                 key={plan.key}
                 className={cn(
-                  "relative flex flex-col rounded-2xl border p-7 transition-colors",
+                  "relative flex flex-col rounded-2xl border p-7 transition-shadow",
                   plan.featured
-                    ? "border-blue-500/25 bg-blue-500/4"
-                    : "border-white/8 bg-[#0f0f0f]"
+                    ? "border-orange-200 bg-orange-50/50 shadow-md"
+                    : "border-neutral-200 bg-white shadow-sm"
                 )}
               >
-                {/* Most popular pill */}
                 {plan.featured && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="rounded-full border border-blue-500/20 bg-[#0a0a0a] px-3 py-1 text-[11px] font-medium text-blue-400">
+                    <span className="rounded-full border border-orange-200 bg-white px-3 py-1 text-[11px] font-medium text-[#FF6B2C]">
                       Most popular
                     </span>
                   </div>
                 )}
 
-                {/* Plan name + active badge */}
                 <div className="mb-1 flex items-center gap-2">
-                  <p className="text-sm font-semibold text-white/90">
+                  <p className="text-sm font-semibold text-neutral-900">
                     {plan.label}
                   </p>
                   {isActive && (
-                    <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+                    <span className="rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-[#FF6B2C]">
                       Active
                     </span>
                   )}
                 </div>
 
-                {/* Description */}
-                <p className="mb-6 text-xs leading-relaxed text-white/35">
+                <p className="mb-6 text-xs leading-relaxed text-neutral-500">
                   {plan.description}
                 </p>
 
-                {/* Price */}
                 <div className="mb-1 flex items-baseline gap-1">
-                  <span className="font-serif text-4xl">
+                  <span className="text-4xl font-semibold text-neutral-900">
                     {plan.price === 0 ? (
-                      <GrayTitle>$0</GrayTitle>
+                      "$0"
                     ) : (
-                      <BlueTitle>${plan.price}</BlueTitle>
+                      <span className="text-[#FF6B2C]">${plan.price}</span>
                     )}
                   </span>
                   {plan.price > 0 && (
-                    <span className="text-sm text-white/30">/mo</span>
+                    <span className="text-sm text-neutral-400">/mo</span>
                   )}
                 </div>
-                <p className="mb-6 text-xs text-white/25">
+                <p className="mb-6 text-xs text-neutral-400">
                   {plan.price === 0 ? "Always free" : "Only billed monthly"}
                 </p>
 
-                {/* Feature list */}
-                <div className="mb-8 space-y-3 border-t border-white/6 pt-6">
+                <div className="mb-8 space-y-3 border-t border-neutral-200 pt-6">
                   {plan.features.map((f) => (
                     <div key={f} className="flex items-center gap-2.5">
                       <div
                         className={cn(
                           "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
-                          plan.featured ? "bg-blue-500/15" : "bg-white/8"
+                          plan.featured ? "bg-orange-100" : "bg-neutral-100"
                         )}
                       >
                         <Check
                           className={cn(
                             "h-2.5 w-2.5",
-                            plan.featured ? "text-blue-400" : "text-white/50"
+                            plan.featured
+                              ? "text-[#FF6B2C]"
+                              : "text-neutral-500"
                           )}
                         />
                       </div>
-                      <span className="text-xs text-white/55">{f}</span>
+                      <span className="text-xs text-neutral-600">{f}</span>
                     </div>
                   ))}
                 </div>
 
-                {/* CTA button */}
                 <div className="mt-auto">
                   {isActive ? (
                     <Button
                       disabled
-                      className="w-full rounded-full text-sm font-semibold opacity-50 cursor-not-allowed border border-white/10 bg-transparent text-white/60"
+                      className="w-full cursor-not-allowed rounded-full border border-neutral-200 bg-transparent text-sm font-semibold text-neutral-400 opacity-50"
                       variant="ghost"
                     >
                       ✓ Current plan
@@ -454,7 +462,7 @@ export default function LandingPage() {
                     isSignedIn ? (
                       <Button
                         disabled
-                        className="w-full rounded-full text-sm font-semibold opacity-50 cursor-not-allowed border border-white/10 bg-transparent text-white/60"
+                        className="w-full cursor-not-allowed rounded-full border border-neutral-200 bg-transparent text-sm font-semibold text-neutral-400 opacity-50"
                         variant="ghost"
                       >
                         Default plan
@@ -462,11 +470,11 @@ export default function LandingPage() {
                     ) : (
                       <SignInButton mode="modal">
                         <Button
-                          className="w-full rounded-full text-sm font-semibold border border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white/90"
+                          className="w-full rounded-full border border-neutral-200 bg-transparent text-sm font-semibold text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
                           variant="ghost"
                         >
                           Get started free
-                          <ArrowRight className="h-3.5 w-3.5" />
+                          <ChevronRight className="h-3.5 w-3.5" />
                         </Button>
                       </SignInButton>
                     )
@@ -488,13 +496,13 @@ export default function LandingPage() {
                         className={cn(
                           "w-full rounded-full text-sm font-semibold transition-all",
                           plan.featured
-                            ? "bg-blue-500 text-white hover:bg-blue-400 active:scale-95"
-                            : "border border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white/90"
+                            ? "bg-[#FF6B2C] text-white hover:bg-[#E85A1A] active:scale-95"
+                            : "border border-neutral-200 bg-transparent text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
                         )}
                         variant="ghost"
                       >
                         {isDowngrade ? "Downgrade" : "Get started"}
-                        <ArrowRight className="h-3.5 w-3.5" />
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </Button>
                     </CheckoutButton>
                   ) : (
@@ -503,13 +511,13 @@ export default function LandingPage() {
                         className={cn(
                           "w-full rounded-full text-sm font-semibold transition-all",
                           plan.featured
-                            ? "bg-blue-500 text-white hover:bg-blue-400 active:scale-95"
-                            : "border border-white/10 bg-transparent text-white/60 hover:bg-white/6 hover:text-white/90"
+                            ? "bg-[#FF6B2C] text-white hover:bg-[#E85A1A] active:scale-95"
+                            : "border border-neutral-200 bg-transparent text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
                         )}
                         variant="ghost"
                       >
                         Get started
-                        <ArrowRight className="h-3.5 w-3.5" />
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </Button>
                     </SignInButton>
                   )}
@@ -521,24 +529,14 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA ───────────────────────────────────────────────────────────── */}
-      <section className="relative mx-auto mb-32 max-w-5xl overflow-hidden rounded-2xl border border-white/8 px-10 py-24 text-center">
-        <HoleBackground
-          strokeColor="rgba(255,255,255,0.05)" // blur
-          numberOfLines={36}
-          numberOfDiscs={36}
-          particleRGBColor={[147, 197, 253]}
-          className="absolute inset-0 h-full w-full"
-          style={{
-            maskImage:
-              "linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.4) 50%, transparent 100%)",
-            WebkitMaskImage:
-              "linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.4) 50%, transparent 100%)",
-          }}
-        />
+      <section className="relative mx-4 mb-32 overflow-hidden rounded-3xl border border-neutral-200 bg-white px-10 py-24 text-center shadow-lg shadow-neutral-200/50 sm:mx-auto sm:max-w-5xl">
+        <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-black">
+          Start building,
+          <br />
+          <span className="text-[#FF6B2C]">for free.</span>
+        </h2>
 
-        <SectionHeading gray="Start building," blue="for free." />
-
-        <p className="mb-8 text-sm leading-relaxed text-white/40">
+        <p className="mb-8 mt-4 text-sm leading-relaxed text-neutral-500">
           Get 10 free generations on sign up. No credit card required.
           <br />
           Upgrade when you&apos;re ready.
@@ -547,7 +545,7 @@ export default function LandingPage() {
         <SignInButton mode="modal">
           <Button
             size="lg"
-            className="relative h-11 rounded-full bg-white px-8"
+            className="relative h-11 rounded-full bg-[#FF6B2C] px-8 text-white hover:bg-[#E85A1A]"
           >
             Get started free
             <ChevronRight className="h-4 w-4" />
@@ -555,8 +553,8 @@ export default function LandingPage() {
         </SignInButton>
       </section>
 
-      <footer className="relative z-10 border-t border-white/7 py-12 mx-auto px-6 flex flex-wrap items-center justify-center text-stone-400">
-        Made with ❤️ by RoadsideCoder
+      <footer className="relative z-10 mx-auto flex flex-wrap items-center justify-center border-t border-neutral-200 px-6 py-12 text-neutral-400">
+        Made with ❤️ by MMERA
       </footer>
     </main>
   );

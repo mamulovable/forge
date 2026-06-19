@@ -21,8 +21,8 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Forge - AI App Builder",
-  description: "",
+  title: "Dreamera - AI App Builder",
+  description: "Turn your ideas into apps with AI. Build fully-functional apps in minutes with just your words.",
   icons: {
     icon: "/logo-short.jpeg",
   },
