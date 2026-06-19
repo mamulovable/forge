@@ -6,6 +6,10 @@ import { MessageSquare, Eye } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
 import { CodePanel } from "./CodePanel";
 import { MIN_CREDITS_TO_GENERATE } from "@/lib/constants";
+import {
+  readStoredGenerationModelId,
+  writeStoredGenerationModelId,
+} from "@/lib/generation-models";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type {
@@ -70,6 +74,13 @@ export function WorkspaceClient({
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(
     parseFileData(workspace?.fileData) ? "preview" : "chat"
   );
+  const [generationModelId, setGenerationModelId] = useState(
+    readStoredGenerationModelId
+  );
+
+  useEffect(() => {
+    writeStoredGenerationModelId(generationModelId);
+  }, [generationModelId]);
 
   // AbortController refs — used to cancel in-flight streams
   const generateAbortRef = useRef<AbortController | null>(null);
@@ -144,6 +155,7 @@ export function WorkspaceClient({
             userId,
             messages: conversationHistory,
             fileData: fileDataRef.current,
+            modelPreference: generationModelId,
           }),
         });
 
@@ -217,7 +229,7 @@ export function WorkspaceClient({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [credits, isGenerating, userId]
+    [credits, isGenerating, userId, generationModelId]
     // fileData intentionally omitted — read via fileDataRef
   );
 
@@ -378,6 +390,8 @@ export function WorkspaceClient({
           userId={userId}
           workspaceId={workspaceId}
           appTitle={fileData?.title ?? workspace?.title ?? null}
+          generationModelId={generationModelId}
+          onGenerationModelChange={setGenerationModelId}
         />
       </div>
 

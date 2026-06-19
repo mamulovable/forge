@@ -16,6 +16,7 @@ import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { PricingModal } from "@/components/PricingModal";
 import type { Message, StatusStep } from "@/types/workspace";
+import { GENERATION_MODELS } from "@/lib/generation-models";
 import { createClient } from "@supabase/supabase-js";
 import { BlueTitle } from "./reusables";
 import Image from "next/image";
@@ -37,6 +38,8 @@ interface ChatPanelProps {
   userId: string;
   workspaceId: string | null;
   appTitle: string | null;
+  generationModelId: string;
+  onGenerationModelChange: (modelId: string) => void;
 }
 
 export function ChatPanel({
@@ -51,6 +54,8 @@ export function ChatPanel({
   userId,
   workspaceId,
   appTitle,
+  generationModelId,
+  onGenerationModelChange,
 }: ChatPanelProps) {
   const { user } = useUser();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -366,7 +371,22 @@ export function ChatPanel({
             style={{ maxHeight: 160 }}
           />
 
-          <div className="flex items-center justify-between px-2 pb-2">
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <select
+              value={generationModelId}
+              onChange={(e) => onGenerationModelChange(e.target.value)}
+              disabled={isGenerating || isImproving || noCredits}
+              className="h-7 max-w-[170px] truncate rounded-lg border border-white/8 bg-white/5 px-2 text-[11px] text-white/70 outline-none transition-colors hover:border-white/12 focus:border-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Generation model"
+            >
+              {GENERATION_MODELS.map((model) => (
+                <option key={model.id} value={model.id} className="bg-[#111]">
+                  {model.label}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
@@ -413,6 +433,7 @@ export function ChatPanel({
                 <ArrowUp className="h-3.5 w-3.5" />
               </Button>
             )}
+            </div>
           </div>
         </div>
 

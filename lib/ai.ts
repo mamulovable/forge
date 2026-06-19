@@ -81,6 +81,7 @@ export async function* generateWithOpenRouter(
   messages: Message[],
   fileData: FileData | null,
   systemPrompt: string,
+  modelId?: string,
 ): AsyncGenerator<AIStreamEvent> {
   const { default: OpenAI } = await import("openai");
 
@@ -95,7 +96,8 @@ export async function* generateWithOpenRouter(
     },
   });
 
-  const model = process.env.OPENROUTER_MODEL || "google/gemini-3.5-flash";
+  const model =
+    modelId || process.env.OPENROUTER_MODEL || "google/gemini-3.5-flash";
   const openAIMessages = buildOpenAIMessages(messages, fileData);
 
   const stream = await openai.chat.completions.create({

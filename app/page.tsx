@@ -10,6 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FEATURES, PLACEHOLDERS, STEPS, SUGGESTIONS } from "@/lib/data";
 import { PRICING_PLANS } from "@/lib/constants";
+import {
+  GENERATION_MODELS,
+  readStoredGenerationModelId,
+  writeStoredGenerationModelId,
+} from "@/lib/generation-models";
 
 export default function LandingPage() {
   const { isSignedIn, has } = useAuth();
@@ -19,6 +24,13 @@ export default function LandingPage() {
   const [prompt, setPrompt] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
+  const [generationModelId, setGenerationModelId] = useState(
+    readStoredGenerationModelId
+  );
+
+  useEffect(() => {
+    writeStoredGenerationModelId(generationModelId);
+  }, [generationModelId]);
 
   useEffect(() => {
     if (isFocused || prompt) return;
@@ -99,10 +111,24 @@ export default function LandingPage() {
               style={{ minHeight: 56, maxHeight: 200 }}
             />
 
-            <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-2.5">
-              <span className="text-xs text-neutral-400">
-                Press ⏎ to generate · Shift+⏎ for new line
-              </span>
+            <div className="flex items-center justify-between gap-3 border-t border-neutral-100 px-4 py-2.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <select
+                  value={generationModelId}
+                  onChange={(e) => setGenerationModelId(e.target.value)}
+                  className="h-7 max-w-[150px] shrink-0 truncate rounded-lg border border-neutral-200 bg-neutral-50 px-2 text-[11px] text-neutral-600 outline-none transition-colors hover:border-neutral-300 focus:border-neutral-400 sm:max-w-[170px]"
+                  aria-label="Generation model"
+                >
+                  {GENERATION_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="hidden truncate text-xs text-neutral-400 sm:inline">
+                  Press ⏎ to generate · Shift+⏎ for new line
+                </span>
+              </div>
 
               {isSignedIn ? (
                 <Button

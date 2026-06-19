@@ -5,18 +5,18 @@ import { db, DB_TX_OPTS, isDbTransientError, runTransactionWithRetry } from "@/l
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
 import type { Message, FileData } from "@/types/workspace";
 import { generateWithOpenRouter, type AIStreamEvent } from "@/lib/ai";
+import {
+  getAutoGeminiModels,
+  getGenerationModelById,
+  getOpenRouterFallbackModel,
+} from "@/lib/generation-models";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-const GEMINI_MODELS = [
-  { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
-] as const;
+const MAX_PRE_OUTPUT_RETRIES = 1;
+const PRE_OUTPUT_RETRY_DELAY_MS = 2_000;
 
-const OPENROUTER_FALLBACK_LABEL = "OpenRouter";
-
-const MAX_RETRIES_PER_MODEL = 2;
-const RETRY_DELAYS_MS = [4_000, 8_000];
+type StatusCallback = (message: string, resetOutput?: boolean) => void;
 
 const PREINSTALLED_PACKAGES = [
   "lucide-react",
@@ -54,6 +54,17 @@ function isCapacityError(err: unknown): boolean {
   );
 }
 
+function isMidStreamFailure(err: unknown): boolean {
+  return Boolean((err as { midStreamFailure?: boolean })?.midStreamFailure);
+}
+
+function markMidStreamFailure(err: unknown): Error {
+  const error =
+    err instanceof Error ? err : new Error(String(err ?? "Model failed"));
+  (error as Error & { midStreamFailure?: boolean }).midStreamFailure = true;
+  return error;
+}
+
 function shouldTryNextModel(err: unknown): boolean {
   const status = (err as { status?: number })?.status;
   const msg = String((err as Error)?.message ?? "");
@@ -77,74 +88,126 @@ function buildGeminiConfig() {
   };
 }
 
+async function* generateWithGeminiModel(
+  modelId: string,
+  contents: ReturnType<typeof buildContents>
+): AsyncGenerator<AIStreamEvent> {
+  let hasOutput = false;
+
+  for (let attempt = 0; attempt <= MAX_PRE_OUTPUT_RETRIES; attempt++) {
+    try {
+      if (attempt > 0 && !hasOutput) {
+        await sleep(PRE_OUTPUT_RETRY_DELAY_MS);
+      }
+
+      hasOutput = false;
+      const stream = await ai.models.generateContentStream({
+        model: modelId,
+        contents,
+        config: buildGeminiConfig(),
+      });
+
+      for await (const chunk of stream) {
+        const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+        for (const part of parts) {
+          if (!part.text) continue;
+          hasOutput = true;
+          yield {
+            type: part.thought ? "thought" : "content",
+            text: part.text,
+          };
+        }
+      }
+      return;
+    } catch (err) {
+      if (!shouldTryNextModel(err)) throw err;
+      if (hasOutput) throw markMidStreamFailure(err);
+      if (attempt < MAX_PRE_OUTPUT_RETRIES) continue;
+      throw err;
+    }
+  }
+}
+
+async function* generateWithOpenRouterFallback(
+  messages: Message[],
+  fileData: FileData | null,
+  modelId?: string
+): AsyncGenerator<AIStreamEvent> {
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error("OpenRouter API key not configured");
+  }
+  yield* generateWithOpenRouter(
+    messages,
+    fileData,
+    SYSTEM_PROMPT,
+    modelId
+  );
+}
+
 async function* generateWithModelFallback(
   messages: Message[],
   fileData: FileData | null,
-  onStatus?: (message: string) => void
+  modelPreference: string,
+  onStatus?: StatusCallback
 ): AsyncGenerator<AIStreamEvent> {
+  const choice = getGenerationModelById(modelPreference);
   const contents = buildContents(messages, fileData);
   let lastError: unknown;
 
-  for (let i = 0; i < GEMINI_MODELS.length; i++) {
-    const { id, label } = GEMINI_MODELS[i];
+  if (choice.provider === "openrouter") {
+    onStatus?.(`Generating with ${choice.label}…`);
+    yield* generateWithOpenRouterFallback(messages, fileData, choice.id);
+    return;
+  }
 
-    for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt++) {
-      try {
-        if (attempt > 0) {
-          const delay = RETRY_DELAYS_MS[attempt - 1] ?? 8_000;
-          onStatus?.(`${label} busy — retrying in ${delay / 1000}s…`);
-          await sleep(delay);
-        }
-
-        const stream = await ai.models.generateContentStream({
-          model: id,
-          contents,
-          config: buildGeminiConfig(),
-        });
-
-        for await (const chunk of stream) {
-          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
-          for (const part of parts) {
-            if (!part.text) continue;
-            yield {
-              type: part.thought ? "thought" : "content",
-              text: part.text,
-            };
-          }
-        }
-        return;
-      } catch (err) {
-        lastError = err;
-        if (!shouldTryNextModel(err)) throw err;
-
-        if (attempt < MAX_RETRIES_PER_MODEL) {
-          console.warn(
-            `[gen-ai-code] ${id} failed (attempt ${attempt + 1}), retrying…`,
-            err
-          );
-          continue;
-        }
-
-        const next = GEMINI_MODELS[i + 1];
-        if (!next) break;
-
-        console.warn(
-          `[gen-ai-code] ${id} failed, falling back to ${next.id}:`,
-          err
-        );
-        onStatus?.(`Retrying with ${next.label}…`);
-        break;
+  if (choice.provider === "google") {
+    try {
+      onStatus?.(`Generating with ${choice.label}…`);
+      yield* generateWithGeminiModel(choice.id, contents);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (!shouldTryNextModel(err) || !process.env.OPENROUTER_API_KEY) {
+        throw err;
       }
+      const fallback = getOpenRouterFallbackModel();
+      console.warn(
+        `[gen-ai-code] ${choice.id} failed, falling back to OpenRouter (${fallback.id}):`,
+        err
+      );
+      onStatus?.(`Retrying with ${fallback.label}…`, true);
+      yield* generateWithOpenRouterFallback(messages, fileData, fallback.id);
+      return;
+    }
+  }
+
+  const geminiModels = getAutoGeminiModels();
+
+  for (let i = 0; i < geminiModels.length; i++) {
+    const { id, label } = geminiModels[i];
+    try {
+      onStatus?.(
+        i === 0 ? `Generating with ${label}…` : `Retrying with ${label}…`,
+        i > 0
+      );
+      yield* generateWithGeminiModel(id, contents);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (!shouldTryNextModel(err)) throw err;
+      if (isMidStreamFailure(err)) break;
+      console.warn(`[gen-ai-code] ${id} failed:`, err);
     }
   }
 
   if (process.env.OPENROUTER_API_KEY) {
     try {
+      const fallback = getOpenRouterFallbackModel();
       console.warn(
-        "[gen-ai-code] Gemini models failed, falling back to OpenRouter"
+        `[gen-ai-code] Gemini models failed, falling back to OpenRouter (${fallback.id})`
       );
-      onStatus?.(`Retrying with ${OPENROUTER_FALLBACK_LABEL}…`);
-      yield* generateWithOpenRouter(messages, fileData, SYSTEM_PROMPT);
+      onStatus?.(`Retrying with ${fallback.label}…`, true);
+      yield* generateWithOpenRouterFallback(messages, fileData, fallback.id);
       return;
     } catch (err) {
       lastError = err;
@@ -290,11 +353,12 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { workspaceId, userId, messages, fileData } = body as {
+  const { workspaceId, userId, messages, fileData, modelPreference } = body as {
     workspaceId: string | null;
     userId: string;
     messages: Message[];
     fileData: FileData | null;
+    modelPreference?: string;
   };
 
   if (!messages?.length) {
@@ -350,9 +414,12 @@ export async function POST(request: NextRequest) {
         for await (const event of generateWithModelFallback(
           messages,
           fileData,
-          (message) => {
-            accumulated = "";
-            lastEmitTime = 0;
+          modelPreference ?? "auto",
+          (message, resetOutput) => {
+            if (resetOutput) {
+              accumulated = "";
+              lastEmitTime = 0;
+            }
             enqueue(sseEvent("status", { message }));
           }
         )) {
