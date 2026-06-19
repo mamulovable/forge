@@ -191,11 +191,36 @@
   height: 100% !important;
   min-height: 0 !important;
   width: 100% !important;
+  overflow: hidden !important;
 }
 
 .forge-sandpack-preview .sp-preview-iframe {
   flex: 1 1 auto !important;
   width: 100% !important;
-  min-height: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
   border: 0 !important;
+}
+
+/* Sandpack code editor — CodeMirror scroll */
+.forge-sandpack-layout .sp-code-editor {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.forge-sandpack-layout .cm-editor {
+  height: 100% !important;
+}
+
+.forge-sandpack-layout .cm-scroller {
+  overflow: auto !important;
+  min-height: 0 !important;
+}
+
+.forge-sandpack-layout .sp-file-explorer {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
 }

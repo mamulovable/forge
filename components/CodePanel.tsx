@@ -126,6 +126,41 @@ function SandpackInner({
   const [improveInput, setImproveInput] = useState("");
   const [showImproveInput, setShowImproveInput] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  const fixPreviewScrolling = () => {
+    const iframe = previewRef.current?.querySelector("iframe");
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc?.head) return;
+
+    // Clear any prior inline resize that caused black empty space below content
+    iframe.style.height = "";
+    iframe.style.minHeight = "";
+
+    if (!doc.getElementById("forge-preview-scroll-fix")) {
+      const style = doc.createElement("style");
+      style.id = "forge-preview-scroll-fix";
+      style.textContent = `
+        html, body {
+          margin: 0 !important;
+          overflow-x: hidden !important;
+          overflow-y: auto !important;
+          height: 100% !important;
+        }
+        #root {
+          min-height: 100%;
+        }
+        #root > * {
+          height: auto !important;
+          min-height: 100% !important;
+          max-height: none !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+      `;
+      doc.head.appendChild(style);
+    }
+  };
 
   // Push file content updates into Sandpack without remounting.
   // This runs whenever fileData changes (e.g. after improve completes).
@@ -169,6 +204,7 @@ function SandpackInner({
       }
       if (msg.type === "success") {
         setPreviewError(null);
+        fixPreviewScrolling();
       }
     });
     return () => unsubscribeRef.current?.();
@@ -177,6 +213,24 @@ function SandpackInner({
   useEffect(() => {
     if (isGenerating) setPreviewError(null);
   }, [isGenerating]);
+
+  useEffect(() => {
+    if (activeTab !== "preview") return;
+
+    fixPreviewScrolling();
+
+    const iframe = previewRef.current?.querySelector("iframe");
+    const doc = iframe?.contentDocument;
+    if (!doc?.body) return;
+
+    const observer = new MutationObserver(() => {
+      fixPreviewScrolling();
+    });
+    observer.observe(doc.body, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, fileData?.files]);
 
   const handleImproveSubmit = async () => {
     const trimmed = improveInput.trim();
@@ -293,7 +347,7 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
     <Tabs
       value={activeTab}
       onValueChange={(v) => setActiveTab(v as ActiveTab)}
-      className="flex h-full w-full min-w-0 flex-col gap-0"
+      className="flex h-full w-full min-w-0 min-h-0 flex-col gap-0"
     >
       {/* Tabs + Actions bar */}
       <div className="flex items-center justify-between border-b border-white/6 px-2">
@@ -424,19 +478,21 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
           <TabsContent
             value="preview"
             keepMounted
-            className="mt-0 h-full w-full"
+            className="mt-0 h-full min-h-0 w-full flex-1 overflow-hidden"
           >
-            <SandpackPreview
-              className="forge-sandpack-preview"
-              style={{ height: "100%", width: "100%" }}
-              showOpenInCodeSandbox={false}
-            />
+            <div ref={previewRef} className="h-full min-h-0 w-full">
+              <SandpackPreview
+                className="forge-sandpack-preview"
+                style={{ height: "100%", width: "100%" }}
+                showOpenInCodeSandbox={false}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent
             value="code"
             keepMounted
-            className="mt-0 flex h-full w-full"
+            className="mt-0 flex h-full min-h-0 w-full flex-1 overflow-hidden"
           >
             <SandpackFileExplorer
               style={{

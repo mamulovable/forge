@@ -1,12 +1,135 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { db } from "@/lib/prisma";
+import { db, DB_TX_OPTS, isDbTransientError, runTransactionWithRetry } from "@/lib/prisma";
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
 import type { Message, FileData } from "@/types/workspace";
 import { aj } from "@/lib/arcjet";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+const GEMINI_MODELS = [
+  { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+] as const;
+
+const MAX_RETRIES_PER_MODEL = 2;
+const RETRY_DELAYS_MS = [4_000, 8_000];
+
+const PREINSTALLED_PACKAGES = [
+  "lucide-react",
+  "framer-motion",
+  "recharts",
+  "date-fns",
+  "axios",
+  "react-router-dom",
+  "react-hook-form",
+  "@hookform/resolvers",
+  "zod",
+  "clsx",
+  "tailwind-merge",
+  "class-variance-authority",
+  "@radix-ui/react-dialog",
+  "@radix-ui/react-dropdown-menu",
+  "@radix-ui/react-tabs",
+  "@radix-ui/react-tooltip",
+  "@radix-ui/react-accordion",
+  "@radix-ui/react-select",
+].join(", ");
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isCapacityError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  const msg = String((err as Error)?.message ?? "");
+  return (
+    status === 503 ||
+    status === 429 ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("high demand")
+  );
+}
+
+function shouldTryNextModel(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  const msg = String((err as Error)?.message ?? "");
+  if (status === 503 || status === 429) return true;
+  if (status === 404 && (msg.includes("not found") || msg.includes("NOT_FOUND")))
+    return true;
+  return (
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("high demand") ||
+    msg.includes("NOT_FOUND")
+  );
+}
+
+function buildGeminiConfig() {
+  return {
+    systemInstruction: SYSTEM_PROMPT,
+    temperature: 0.35,
+    responseMimeType: "application/json" as const,
+    maxOutputTokens: 16_384,
+    thinkingConfig: { includeThoughts: true },
+  };
+}
+
+async function* generateWithModelFallback(
+  contents: ReturnType<typeof buildContents>,
+  onStatus?: (message: string) => void
+) {
+  let lastError: unknown;
+
+  for (let i = 0; i < GEMINI_MODELS.length; i++) {
+    const { id, label } = GEMINI_MODELS[i];
+
+    for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt++) {
+      try {
+        if (attempt > 0) {
+          const delay = RETRY_DELAYS_MS[attempt - 1] ?? 8_000;
+          onStatus?.(`${label} busy — retrying in ${delay / 1000}s…`);
+          await sleep(delay);
+        }
+
+        const stream = await ai.models.generateContentStream({
+          model: id,
+          contents,
+          config: buildGeminiConfig(),
+        });
+
+        for await (const chunk of stream) {
+          yield chunk;
+        }
+        return;
+      } catch (err) {
+        lastError = err;
+        if (!shouldTryNextModel(err)) throw err;
+
+        if (attempt < MAX_RETRIES_PER_MODEL) {
+          console.warn(
+            `[gen-ai-code] ${id} failed (attempt ${attempt + 1}), retrying…`,
+            err
+          );
+          continue;
+        }
+
+        const next = GEMINI_MODELS[i + 1];
+        if (!next) throw err;
+
+        console.warn(
+          `[gen-ai-code] ${id} failed, falling back to ${next.id}:`,
+          err
+        );
+        onStatus?.(`Retrying with ${next.label}…`);
+        break;
+      }
+    }
+  }
+
+  throw lastError;
+}
 
 // ─── SSE helper ───────────────────────────────────────────────────────────────
 
@@ -60,30 +183,47 @@ function trimHistory(messages: Message[]): Message[] {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an expert React developer. Your job is to generate complete, working React applications based on user prompts.
+const SYSTEM_PROMPT = `You are a senior React engineer building polished, production-quality demo apps inside a live browser preview (Sandpack).
 
-RULES:
-1. Always respond with a valid JSON object — no markdown fences, no extra text.
-2. The JSON must match this exact shape:
+OUTPUT FORMAT (strict):
+1. Respond with ONE valid JSON object only — no markdown fences, no commentary outside JSON.
+2. Shape:
 {
-  "assistantMessage": "<brief explanation of what you built/changed>",
-  "title": "<short 2-4 word title for the app, e.g. 'Todo List App'>",
+  "assistantMessage": "<1-2 sentences on what you built>",
+  "title": "<short 2-4 word title>",
   "files": {
     "/App.js": { "code": "<full file content>" },
-    "/components/SomeComponent.js": { "code": "<full file content>" }
+    "/components/Example.js": { "code": "<full file content>" }
   },
-  "dependencies": {
-    "some-package": "latest"
-  }
+  "dependencies": {}
 }
-3. Use React (functional components + hooks). Do NOT use TypeScript in generated files.
-4. Use Tailwind CSS for all styling. Do not use CSS modules or inline styles unless absolutely necessary.
-5. The entry point must always be /App.js and must export a default component.
-6. All imports must reference files you include in "files" or packages in "dependencies".
-7. Do not include react, react-dom, or tailwindcss in "dependencies" — they are always available.
-8. When modifying existing code, include ALL files (both changed and unchanged) in "files".
-9. Keep code clean, readable, and production-quality.
-10. If the user attaches an image, use it as a design reference and match the layout/style as closely as possible.`;
+
+TECH STACK:
+- React functional components + hooks. JavaScript only (no TypeScript).
+- Tailwind CSS for ALL styling — modern, responsive, visually polished UI.
+- Entry point is always /App.js with a default export.
+- Do NOT add react, react-dom, or tailwindcss to dependencies.
+
+PRE-INSTALLED (use freely, do NOT re-add to dependencies):
+${PREINSTALLED_PACKAGES}
+
+QUALITY BAR (always follow):
+- Build something that looks like a real shipped product, not a homework exercise.
+- Split UI into focused components under /components/ for anything beyond a trivial app.
+- Use lucide-react for icons. Use framer-motion for animations when the user asks for motion, transitions, or animated icons.
+- Use realistic mock data (names, numbers, copy) — never "Lorem ipsum" or "TODO".
+- Responsive layout: mobile-first, proper spacing (p-4, gap-4), rounded-xl cards, subtle shadows, gradient accents where appropriate.
+- Dark-theme friendly palettes (slate/zinc backgrounds, white/80 text).
+- Accessible: semantic HTML, aria-labels on icon-only buttons, sufficient color contrast.
+- Working interactivity: buttons toggle state, forms validate, lists filter/sort when relevant.
+- Preview runs in a fixed-height iframe: use min-h-screen on the root, never h-screen overflow-hidden on the outermost wrapper.
+- No console errors: every import must exist in "files" or pre-installed packages above.
+
+WHEN MODIFYING EXISTING CODE:
+- Return ALL files (changed and unchanged) in "files".
+
+IMAGE ATTACHMENTS:
+- Match the attached image layout/style as closely as possible.`;
 
 // ─── Gemini contents builder ──────────────────────────────────────────────────
 
@@ -182,23 +322,14 @@ export async function POST(request: NextRequest) {
       try {
         const contents = buildContents(messages, fileData);
 
-        const geminiStream = await ai.models.generateContentStream({
-          model: "gemini-3.5-flash",
-          contents,
-          config: {
-            systemInstruction: SYSTEM_PROMPT,
-            temperature: 0.7,
-            responseMimeType: "application/json",
-            thinkingConfig: {
-              includeThoughts: true,
-            },
-          },
-        });
-
         let accumulated = ""; // final JSON output
         let lastEmitTime = 0; // throttle thought emissions
 
-        for await (const chunk of geminiStream) {
+        for await (const chunk of generateWithModelFallback(contents, (message) => {
+          accumulated = "";
+          lastEmitTime = 0;
+          enqueue(sseEvent("status", { message }));
+        })) {
           const parts = chunk.candidates?.[0]?.content?.parts ?? [];
 
           for (const part of parts) {
@@ -279,28 +410,33 @@ export async function POST(request: NextRequest) {
           { role: "assistant", content: assistantMessage },
         ];
 
-        const [workspace] = await db.$transaction([
-          workspaceId
-            ? db.workspace.update({
-                where: { id: workspaceId, userId },
-                data: {
-                  messages: updatedMessages as never,
-                  fileData: newFileData as never,
-                },
-              })
-            : db.workspace.create({
-                data: {
-                  userId,
-                  title: aiTitle ?? lastUserMessage.content.slice(0, 80),
-                  messages: updatedMessages as never,
-                  fileData: newFileData as never,
-                },
+        const [workspace] = await runTransactionWithRetry(() =>
+          db.$transaction(
+            [
+              workspaceId
+                ? db.workspace.update({
+                    where: { id: workspaceId, userId },
+                    data: {
+                      messages: updatedMessages as never,
+                      fileData: newFileData as never,
+                    },
+                  })
+                : db.workspace.create({
+                    data: {
+                      userId,
+                      title: aiTitle ?? lastUserMessage.content.slice(0, 80),
+                      messages: updatedMessages as never,
+                      fileData: newFileData as never,
+                    },
+                  }),
+              db.user.update({
+                where: { id: userId },
+                data: { credits: { decrement: CREDIT_COST_PER_GENERATION } },
               }),
-          db.user.update({
-            where: { id: userId },
-            data: { credits: { decrement: CREDIT_COST_PER_GENERATION } },
-          }),
-        ]);
+            ],
+            DB_TX_OPTS
+          )
+        );
 
         const updatedUser = await db.user.findUnique({
           where: { id: userId },
@@ -322,7 +458,11 @@ export async function POST(request: NextRequest) {
         console.error("[gen-ai-code] stream error:", err);
         enqueue(
           sseEvent("error", {
-            message: "Something went wrong. Please try again.",
+            message: isCapacityError(err)
+              ? "All models are busy right now. Please try again in a minute."
+              : isDbTransientError(err)
+                ? "Database is busy. Please try again."
+                : "Something went wrong. Please try again.",
           })
         );
       } finally {

@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { Agent, createTool } from "@cline/sdk";
 import { z } from "zod";
-import { db } from "@/lib/prisma";
+import { db, DB_TX_OPTS, runTransactionWithRetry } from "@/lib/prisma";
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
 import type { FileData } from "@/types/workspace";
 
@@ -195,16 +195,21 @@ RULES:
           title: fileData.title,
         };
 
-        await db.$transaction([
-          db.workspace.update({
-            where: { id: workspaceId, userId },
-            data: { fileData: newFileData as never },
-          }),
-          db.user.update({
-            where: { id: userId },
-            data: { credits: { decrement: CREDIT_COST_PER_GENERATION } },
-          }),
-        ]);
+        await runTransactionWithRetry(() =>
+          db.$transaction(
+            [
+              db.workspace.update({
+                where: { id: workspaceId, userId },
+                data: { fileData: newFileData as never },
+              }),
+              db.user.update({
+                where: { id: userId },
+                data: { credits: { decrement: CREDIT_COST_PER_GENERATION } },
+              }),
+            ],
+            DB_TX_OPTS
+          )
+        );
 
         const updatedUser = await db.user.findUnique({
           where: { id: userId },
