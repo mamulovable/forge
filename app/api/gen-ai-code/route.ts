@@ -4,15 +4,16 @@ import { GoogleGenAI } from "@google/genai";
 import { db, DB_TX_OPTS, isDbTransientError, runTransactionWithRetry } from "@/lib/prisma";
 import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
 import type { Message, FileData } from "@/types/workspace";
-import { aj } from "@/lib/arcjet";
+import { generateWithOpenRouter, type AIStreamEvent } from "@/lib/ai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const GEMINI_MODELS = [
   { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
   { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
 ] as const;
+
+const OPENROUTER_FALLBACK_LABEL = "OpenRouter";
 
 const MAX_RETRIES_PER_MODEL = 2;
 const RETRY_DELAYS_MS = [4_000, 8_000];
@@ -77,9 +78,11 @@ function buildGeminiConfig() {
 }
 
 async function* generateWithModelFallback(
-  contents: ReturnType<typeof buildContents>,
+  messages: Message[],
+  fileData: FileData | null,
   onStatus?: (message: string) => void
-) {
+): AsyncGenerator<AIStreamEvent> {
+  const contents = buildContents(messages, fileData);
   let lastError: unknown;
 
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
@@ -100,7 +103,14 @@ async function* generateWithModelFallback(
         });
 
         for await (const chunk of stream) {
-          yield chunk;
+          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+          for (const part of parts) {
+            if (!part.text) continue;
+            yield {
+              type: part.thought ? "thought" : "content",
+              text: part.text,
+            };
+          }
         }
         return;
       } catch (err) {
@@ -116,7 +126,7 @@ async function* generateWithModelFallback(
         }
 
         const next = GEMINI_MODELS[i + 1];
-        if (!next) throw err;
+        if (!next) break;
 
         console.warn(
           `[gen-ai-code] ${id} failed, falling back to ${next.id}:`,
@@ -125,6 +135,19 @@ async function* generateWithModelFallback(
         onStatus?.(`Retrying with ${next.label}…`);
         break;
       }
+    }
+  }
+
+  if (process.env.OPENROUTER_API_KEY) {
+    try {
+      console.warn(
+        "[gen-ai-code] Gemini models failed, falling back to OpenRouter"
+      );
+      onStatus?.(`Retrying with ${OPENROUTER_FALLBACK_LABEL}…`);
+      yield* generateWithOpenRouter(messages, fileData, SYSTEM_PROMPT);
+      return;
+    } catch (err) {
+      lastError = err;
     }
   }
 
@@ -321,35 +344,29 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(chunk));
 
       try {
-        const contents = buildContents(messages, fileData);
-
         let accumulated = ""; // final JSON output
         let lastEmitTime = 0; // throttle thought emissions
 
-        for await (const chunk of generateWithModelFallback(contents, (message) => {
-          accumulated = "";
-          lastEmitTime = 0;
-          enqueue(sseEvent("status", { message }));
-        })) {
-          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
-
-          for (const part of parts) {
-            if (!part.text) continue;
-
-            if (part.thought) {
-              // Extract just the short label — not the full wall of text
-              const now = Date.now();
-              if (now - lastEmitTime > 600) {
-                const label = extractThoughtLabel(part.text);
-                if (label) {
-                  enqueue(sseEvent("status", { message: label }));
-                  lastEmitTime = now;
-                }
+        for await (const event of generateWithModelFallback(
+          messages,
+          fileData,
+          (message) => {
+            accumulated = "";
+            lastEmitTime = 0;
+            enqueue(sseEvent("status", { message }));
+          }
+        )) {
+          if (event.type === "thought") {
+            const now = Date.now();
+            if (now - lastEmitTime > 600) {
+              const label = extractThoughtLabel(event.text);
+              if (label) {
+                enqueue(sseEvent("status", { message: label }));
+                lastEmitTime = now;
               }
-            } else {
-              // Actual JSON output
-              accumulated += part.text;
             }
+          } else {
+            accumulated += event.text;
           }
         }
 

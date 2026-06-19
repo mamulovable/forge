@@ -77,7 +77,7 @@ function buildGoogleContents(
 
 // ─── OpenRouter provider ────────────────────────────────────────────────
 
-async function* generateWithOpenRouter(
+export async function* generateWithOpenRouter(
   messages: Message[],
   fileData: FileData | null,
   systemPrompt: string,
@@ -104,10 +104,10 @@ async function* generateWithOpenRouter(
       { role: "system", content: systemPrompt },
       ...openAIMessages,
     ],
-    temperature: 0.7,
+    temperature: 0.35,
     response_format: { type: "json_object" },
     stream: true,
-    max_tokens: 8192,
+    max_tokens: 16_384,
   });
 
   for await (const chunk of stream) {
