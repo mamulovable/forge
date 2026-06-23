@@ -5,7 +5,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { ExternalLink, Eye, Loader2, MessageSquare } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
 import { CodePanel, type CodePanelHandle } from "./CodePanel";
-import { MIN_CREDITS_TO_GENERATE, canUseImproveAgent } from "@/lib/constants";
+import { MIN_CREDITS_TO_GENERATE, AUTO_HEAL_MAX_ATTEMPTS, canUseImproveAgent } from "@/lib/constants";
+import { buildAutoHealFixPrompt } from "@/lib/auto-heal";
 import {
   readStoredGenerationModelId,
   writeStoredGenerationModelId,
@@ -51,6 +52,12 @@ function parseFileData(raw: unknown): FileData | null {
 
 type MobilePanel = "chat" | "preview";
 
+interface GenerateOptions {
+  autoHeal?: boolean;
+  autoHealAttempt?: number;
+  skipChatUserMessage?: boolean;
+}
+
 export function WorkspaceClient({
   initialPrompt,
   workspace,
@@ -75,7 +82,13 @@ export function WorkspaceClient({
     parseFileData(workspace?.fileData) ? "preview" : "chat"
   );
   const [isOpeningMobilePreview, setIsOpeningMobilePreview] = useState(false);
+  const [isAutoHealing, setIsAutoHealing] = useState(false);
+  const [autoHealAttempt, setAutoHealAttempt] = useState(0);
+  const [autoHealExhausted, setAutoHealExhausted] = useState(false);
   const codePanelRef = useRef<CodePanelHandle>(null);
+  const autoHealAttemptsRef = useRef(0);
+  const autoHealInFlightRef = useRef(false);
+  const autoHealExhaustedToastRef = useRef(false);
   const [generationModelId, setGenerationModelId] = useState(
     readStoredGenerationModelId
   );
@@ -123,10 +136,25 @@ export function WorkspaceClient({
     );
   };
 
+  const resetAutoHeal = useCallback(() => {
+    autoHealAttemptsRef.current = 0;
+    autoHealExhaustedToastRef.current = false;
+    setAutoHealAttempt(0);
+    setAutoHealExhausted(false);
+  }, []);
+
   const handleGenerate = useCallback(
-    async (prompt: string, imageUrl?: string) => {
+    async (
+      prompt: string,
+      imageUrl?: string,
+      options?: GenerateOptions
+    ) => {
       if (isGenerating) return;
       if (credits < MIN_CREDITS_TO_GENERATE) return;
+
+      if (!options?.autoHeal) {
+        resetAutoHeal();
+      }
 
       const userMessage: Message = {
         role: "user",
@@ -134,12 +162,27 @@ export function WorkspaceClient({
         ...(imageUrl ? { imageUrl } : {}),
       };
 
+      const showUserMessageInChat = !options?.skipChatUserMessage;
       const currentMessages = messagesRef.current;
       const currentWorkspaceId = workspaceIdRef.current;
 
-      setMessages((prev) => [...prev, userMessage]);
+      if (showUserMessageInChat) {
+        setMessages((prev) => [...prev, userMessage]);
+      }
+
+      if (options?.autoHeal) {
+        setIsAutoHealing(true);
+      }
+
       setIsGenerating(true);
-      setStatusLog([{ label: "Thinking…", status: "running" }]);
+      setStatusLog([
+        {
+          label: options?.autoHeal
+            ? `Auto-healing (${options.autoHealAttempt ?? autoHealAttemptsRef.current}/${AUTO_HEAL_MAX_ATTEMPTS})…`
+            : "Thinking…",
+          status: "running",
+        },
+      ]);
 
       // Create a fresh AbortController for this request
       const abortController = new AbortController();
@@ -162,12 +205,16 @@ export function WorkspaceClient({
         });
 
         if (res.status === 402) {
-          setMessages((prev) => prev.slice(0, -1));
+          if (showUserMessageInChat) {
+            setMessages((prev) => prev.slice(0, -1));
+          }
           return;
         }
         if (res.status === 429) {
           toast.error("Too many requests. Please slow down.");
-          setMessages((prev) => prev.slice(0, -1));
+          if (showUserMessageInChat) {
+            setMessages((prev) => prev.slice(0, -1));
+          }
           return;
         }
         if (!res.ok || !res.body) throw new Error("Generation failed");
@@ -196,10 +243,20 @@ export function WorkspaceClient({
                 setFileData(event.fileData);
                 setCredits(event.creditsRemaining);
                 setMobilePanel("preview");
-                setMessages((prev) => [
-                  ...prev,
-                  { role: "assistant", content: event.assistantMessage },
-                ]);
+                if (options?.autoHeal) {
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: "assistant",
+                      content: `Auto-healed preview error (attempt ${options.autoHealAttempt ?? autoHealAttemptsRef.current}/${AUTO_HEAL_MAX_ATTEMPTS}).`,
+                    },
+                  ]);
+                } else {
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: "assistant", content: event.assistantMessage },
+                  ]);
+                }
                 window.history.replaceState(
                   null,
                   "",
@@ -216,22 +273,27 @@ export function WorkspaceClient({
       } catch (err) {
         // User-initiated stop — silently roll back the user message
         if (err instanceof Error && err.name === "AbortError") {
-          setMessages((prev) => prev.slice(0, -1));
+          if (showUserMessageInChat) {
+            setMessages((prev) => prev.slice(0, -1));
+          }
           return;
         }
         console.error(err);
         toast.error(
           err instanceof Error ? err.message : "Something went wrong."
         );
-        setMessages((prev) => prev.slice(0, -1));
+        if (showUserMessageInChat) {
+          setMessages((prev) => prev.slice(0, -1));
+        }
       } finally {
         generateAbortRef.current = null;
         setIsGenerating(false);
+        setIsAutoHealing(false);
         setStatusLog([]);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [credits, isGenerating, userId, generationModelId]
+    [credits, isGenerating, userId, generationModelId, resetAutoHeal]
     // fileData intentionally omitted — read via fileDataRef
   );
 
@@ -371,6 +433,54 @@ export function WorkspaceClient({
     setFileData(patches);
   }, []);
 
+  const handlePreviewSuccess = useCallback(() => {
+    resetAutoHeal();
+  }, [resetAutoHeal]);
+
+  const handlePreviewError = useCallback(
+    (error: string) => {
+      if (isGenerating || isImproving || !fileData) return;
+      if (autoHealInFlightRef.current) return;
+      if (autoHealAttemptsRef.current >= AUTO_HEAL_MAX_ATTEMPTS) {
+        setAutoHealExhausted(true);
+        if (!autoHealExhaustedToastRef.current) {
+          autoHealExhaustedToastRef.current = true;
+          toast.error("Auto-heal couldn't fix the preview", {
+            description: `Failed after ${AUTO_HEAL_MAX_ATTEMPTS} attempts. Try Fix with AI or edit your prompt.`,
+          });
+        }
+        return;
+      }
+      if (credits < MIN_CREDITS_TO_GENERATE) {
+        toast.error("Not enough credits to auto-heal.");
+        return;
+      }
+
+      autoHealInFlightRef.current = true;
+      autoHealAttemptsRef.current += 1;
+      const attempt = autoHealAttemptsRef.current;
+      setAutoHealAttempt(attempt);
+      setAutoHealExhausted(false);
+
+      void handleGenerate(buildAutoHealFixPrompt(error), undefined, {
+        autoHeal: true,
+        autoHealAttempt: attempt,
+        skipChatUserMessage: true,
+      }).finally(() => {
+        autoHealInFlightRef.current = false;
+      });
+    },
+    [credits, fileData, handleGenerate, isGenerating, isImproving]
+  );
+
+  const handleFixError = useCallback(
+    (error: string) => {
+      resetAutoHeal();
+      return handleGenerate(buildAutoHealFixPrompt(error));
+    },
+    [handleGenerate, resetAutoHeal]
+  );
+
   const handleMobileOpenPreview = useCallback(async () => {
     if (
       !fileData ||
@@ -434,11 +544,12 @@ export function WorkspaceClient({
           isGenerating={isGenerating}
           statusLog={statusLog}
           onImprove={handleImprove}
-          onFixError={(error) =>
-            handleGenerate(
-              `There is an error in the preview:\n\n\`\`\`\n${error}\n\`\`\`\n\nPlease fix it.`
-            )
-          }
+          onFixError={handleFixError}
+          onPreviewError={handlePreviewError}
+          onPreviewSuccess={handlePreviewSuccess}
+          isAutoHealing={isAutoHealing}
+          autoHealAttempt={autoHealAttempt}
+          autoHealExhausted={autoHealExhausted}
           onFilePatch={handleFilePatch}
           appTitle={fileData?.title ?? workspace?.title ?? null}
           isImproving={isImproving}

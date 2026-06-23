@@ -8,7 +8,7 @@ export interface GenerationModelOption {
 
 export const GENERATION_MODEL_STORAGE_KEY = "forge-generation-model";
 
-export const DEFAULT_GENERATION_MODEL_ID = "auto";
+export const DEFAULT_GENERATION_MODEL_ID = "gemini-3-flash-preview";
 
 export const OPENROUTER_FALLBACK_MODEL_ID =
   process.env.OPENROUTER_FALLBACK_MODEL || "z-ai/glm-5.2:nitro";

@@ -35,6 +35,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PricingModal } from "@/components/PricingModal";
 import { cn } from "@/lib/utils";
 import { openInCodeSandbox } from "@/lib/open-in-codesandbox";
+import { AUTO_HEAL_MAX_ATTEMPTS } from "@/lib/constants";
 import { BASE_DEPENDENCIES } from "@/lib/sandpack-setup";
 import { toast } from "sonner";
 import type { FileData, StatusStep } from "@/types/workspace";
@@ -85,6 +86,11 @@ interface CodePanelProps {
   isImproving: boolean;
   isProUser: boolean;
   workspaceId: string | null;
+  isAutoHealing?: boolean;
+  autoHealAttempt?: number;
+  autoHealExhausted?: boolean;
+  onPreviewError?: (error: string) => void;
+  onPreviewSuccess?: () => void;
 }
 // Lives inside SandpackProvider so it can call useSandpack().
 // Receives fileData as a prop and uses updateFile() to push code changes
@@ -102,6 +108,11 @@ function SandpackInner({
   isImproving,
   isProUser,
   openPreviewRef,
+  isAutoHealing = false,
+  autoHealAttempt = 0,
+  autoHealExhausted = false,
+  onPreviewError,
+  onPreviewSuccess,
 }: {
   isGenerating: boolean;
   statusLog: StatusStep[];
@@ -114,6 +125,11 @@ function SandpackInner({
   isImproving: boolean;
   isProUser: boolean;
   openPreviewRef: React.MutableRefObject<(() => Promise<void>) | null>;
+  isAutoHealing?: boolean;
+  autoHealAttempt?: number;
+  autoHealExhausted?: boolean;
+  onPreviewError?: (error: string) => void;
+  onPreviewSuccess?: () => void;
 }) {
   const { sandpack, listen } = useSandpack();
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -165,10 +181,16 @@ function SandpackInner({
       }
       if (msg.type === "success") {
         setPreviewError(null);
+        onPreviewSuccess?.();
       }
     });
     return () => unsubscribeRef.current?.();
-  }, [listen]);
+  }, [listen, onPreviewSuccess]);
+
+  useEffect(() => {
+    if (!previewError || isGenerating || isImproving || !fileData) return;
+    onPreviewError?.(previewError);
+  }, [previewError, isGenerating, isImproving, fileData, onPreviewError]);
 
   useEffect(() => {
     if (isGenerating) setPreviewError(null);
@@ -497,7 +519,11 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
             <RingLoader color="#60a5fa" size={64} speedMultiplier={0.8} />
             <div className="flex flex-col items-center gap-1.5">
               <p className="text-sm font-medium text-white/60">
-                {isImproving ? "Improving with Cline AI…" : currentStepLabel}
+                {isAutoHealing
+                  ? `Auto-healing (${autoHealAttempt}/${AUTO_HEAL_MAX_ATTEMPTS})…`
+                  : isImproving
+                    ? "Improving with Cline AI…"
+                    : currentStepLabel}
               </p>
               <p className="text-xs text-white/20">
                 This usually takes 10–20 seconds
@@ -548,15 +574,26 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400/70" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-red-400/80">
-                  Preview error
+                  {autoHealExhausted
+                    ? "Preview error — auto-heal exhausted"
+                    : isAutoHealing
+                      ? `Auto-healing (${autoHealAttempt}/${AUTO_HEAL_MAX_ATTEMPTS})…`
+                      : "Preview error"}
                 </p>
                 <p className="break-all text-[11px] text-red-300/50">
                   {previewError}
                 </p>
+                {autoHealExhausted && (
+                  <p className="mt-1 text-[11px] text-red-300/40">
+                    Could not fix after {AUTO_HEAL_MAX_ATTEMPTS} attempts. Try
+                    Fix with AI or edit your prompt.
+                  </p>
+                )}
               </div>
               <Button
-                onClick={() => onFixError(previewError)}
+                onClick={() => void onFixError(previewError)}
                 variant="destructive"
+                disabled={isAutoHealing}
               >
                 <Bot className="h-3 w-3" />
                 Fix with AI
@@ -583,6 +620,11 @@ export const CodePanel = forwardRef<CodePanelHandle, CodePanelProps>(
       isImproving,
       isProUser,
       workspaceId: _workspaceId,
+      isAutoHealing,
+      autoHealAttempt,
+      autoHealExhausted,
+      onPreviewError,
+      onPreviewSuccess,
     },
     ref
   ) {
@@ -637,6 +679,11 @@ export const CodePanel = forwardRef<CodePanelHandle, CodePanelProps>(
           isImproving={isImproving}
           isProUser={isProUser}
           openPreviewRef={openPreviewRef}
+          isAutoHealing={isAutoHealing}
+          autoHealAttempt={autoHealAttempt}
+          autoHealExhausted={autoHealExhausted}
+          onPreviewError={onPreviewError}
+          onPreviewSuccess={onPreviewSuccess}
         />
       </SandpackProvider>
     </div>

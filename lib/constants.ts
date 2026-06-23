@@ -20,6 +20,8 @@ export const CREDIT_COST_PER_GENERATION = 1;
 
 export const MIN_CREDITS_TO_GENERATE = 1;
 
+export const AUTO_HEAL_MAX_ATTEMPTS = 3;
+
 export function canUseImproveAgent(plan: string): boolean {
   return plan === "starter" || plan === "pro";
 }

@@ -6,6 +6,7 @@ import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
 import type { Message, FileData } from "@/types/workspace";
 import { generateWithOpenRouter, type AIStreamEvent } from "@/lib/ai";
 import {
+  DEFAULT_GENERATION_MODEL_ID,
   getAutoGeminiModels,
   getGenerationModelById,
   getOpenRouterFallbackModel,
@@ -414,7 +415,7 @@ export async function POST(request: NextRequest) {
         for await (const event of generateWithModelFallback(
           messages,
           fileData,
-          modelPreference ?? "auto",
+          modelPreference ?? DEFAULT_GENERATION_MODEL_ID,
           (message, resetOutput) => {
             if (resetOutput) {
               accumulated = "";
