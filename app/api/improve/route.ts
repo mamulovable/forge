@@ -3,7 +3,8 @@ import { NextRequest } from "next/server";
 import { Agent, createTool } from "@cline/sdk";
 import { z } from "zod";
 import { db, DB_TX_OPTS, runTransactionWithRetry } from "@/lib/prisma";
-import { CREDIT_COST_PER_GENERATION } from "@/lib/constants";
+import { CREDIT_COST_PER_GENERATION, canUseImproveAgent } from "@/lib/constants";
+import { checkUser } from "@/lib/checkUser";
 import type { FileData } from "@/types/workspace";
 
 // ─── SSE helper ───────────────────────────────────────────────────────────────
@@ -29,16 +30,16 @@ export async function POST(request: NextRequest) {
 
   // ── Auth + credit check ────────────────────────────────────────────────────
 
-  const user = await db.user.findUnique({
-    where: { id: userId, clerkId },
-    select: { id: true, credits: true, plan: true },
-  });
-
-  if (!user)
+  const syncedUser = await checkUser();
+  if (!syncedUser)
+    return Response.json({ message: "Unauthorized" }, { status: 401 });
+  if (syncedUser.id !== userId)
     return Response.json({ message: "User not found" }, { status: 404 });
 
-  // Pro-only gate
-  if (user.plan !== "pro")
+  const user = syncedUser;
+
+  // Starter + Pro gate (synced from Clerk subscription)
+  if (!canUseImproveAgent(user.plan))
     return Response.json({ message: "Upgrade required" }, { status: 403 });
 
   if (user.credits < CREDIT_COST_PER_GENERATION)

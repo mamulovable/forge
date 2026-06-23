@@ -20,6 +20,10 @@ export const CREDIT_COST_PER_GENERATION = 1;
 
 export const MIN_CREDITS_TO_GENERATE = 1;
 
+export function canUseImproveAgent(plan: string): boolean {
+  return plan === "starter" || plan === "pro";
+}
+
 export const PRICING_PLANS = [
   {
     key: "free",
@@ -37,7 +41,7 @@ export const PRICING_PLANS = [
     description: "For developers who build regularly.",
     price: 9,
     featured: true,
-    planId: "cplan_3DvxGsOeYA5bpJzGWPi8o7wScRD",
+    planId: "cplan_3Et5fsDz7EvOLeOmdiKauQByO6Q",
     active: false,
     features: [
       "50 generations / month",
@@ -52,7 +56,7 @@ export const PRICING_PLANS = [
     description: "For power users who ship fast.",
     price: 29,
     featured: false,
-    planId: "cplan_3DvxTfywwB0NyQ1iqANclgNqlq8",
+    planId: "cplan_3Et5t7nvLLA6tM9X2QKFeleJXW6",
     active: false,
     features: [
       "150 generations / month",

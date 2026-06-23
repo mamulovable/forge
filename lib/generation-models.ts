@@ -21,6 +21,11 @@ export const GENERATION_MODELS: GenerationModelOption[] = [
     provider: "google",
   },
   {
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
+    provider: "google",
+  },
+  {
     id: "gemini-3-flash-preview",
     label: "Gemini 3 Flash",
     provider: "google",

@@ -2,10 +2,10 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { MessageSquare, Eye } from "lucide-react";
+import { ExternalLink, Eye, Loader2, MessageSquare } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
-import { CodePanel } from "./CodePanel";
-import { MIN_CREDITS_TO_GENERATE } from "@/lib/constants";
+import { CodePanel, type CodePanelHandle } from "./CodePanel";
+import { MIN_CREDITS_TO_GENERATE, canUseImproveAgent } from "@/lib/constants";
 import {
   readStoredGenerationModelId,
   writeStoredGenerationModelId,
@@ -74,6 +74,8 @@ export function WorkspaceClient({
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(
     parseFileData(workspace?.fileData) ? "preview" : "chat"
   );
+  const [isOpeningMobilePreview, setIsOpeningMobilePreview] = useState(false);
+  const codePanelRef = useRef<CodePanelHandle>(null);
   const [generationModelId, setGenerationModelId] = useState(
     readStoredGenerationModelId
   );
@@ -369,6 +371,29 @@ export function WorkspaceClient({
     setFileData(patches);
   }, []);
 
+  const handleMobileOpenPreview = useCallback(async () => {
+    if (
+      !fileData ||
+      isGenerating ||
+      isImproving ||
+      isOpeningMobilePreview
+    ) {
+      return;
+    }
+
+    setIsOpeningMobilePreview(true);
+    try {
+      await codePanelRef.current?.openPreviewInNewTab();
+    } finally {
+      setIsOpeningMobilePreview(false);
+    }
+  }, [
+    fileData,
+    isGenerating,
+    isImproving,
+    isOpeningMobilePreview,
+  ]);
+
   return (
     <div className="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden bg-[#0a0a0a] lg:flex-row">
       <div
@@ -404,6 +429,7 @@ export function WorkspaceClient({
         )}
       >
         <CodePanel
+          ref={codePanelRef}
           fileData={fileData}
           isGenerating={isGenerating}
           statusLog={statusLog}
@@ -416,7 +442,7 @@ export function WorkspaceClient({
           onFilePatch={handleFilePatch}
           appTitle={fileData?.title ?? workspace?.title ?? null}
           isImproving={isImproving}
-          isProUser={userPlan === "pro"}
+          isProUser={canUseImproveAgent(userPlan)}
           workspaceId={workspaceId}
         />
       </div>
@@ -447,6 +473,27 @@ export function WorkspaceClient({
         >
           <Eye className="h-4 w-4" />
           Preview
+        </button>
+        <button
+          type="button"
+          onClick={handleMobileOpenPreview}
+          disabled={
+            !fileData ||
+            isGenerating ||
+            isImproving ||
+            isOpeningMobilePreview
+          }
+          className={cn(
+            "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+            "text-white/40 hover:text-white/60"
+          )}
+        >
+          {isOpeningMobilePreview ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ExternalLink className="h-4 w-4" />
+          )}
+          Open
         </button>
       </div>
     </div>

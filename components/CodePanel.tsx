@@ -2,7 +2,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   SandpackProvider,
   SandpackCodeEditor,
@@ -27,8 +34,9 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PricingModal } from "@/components/PricingModal";
 import { cn } from "@/lib/utils";
-import { writePreviewSnapshot } from "@/lib/preview-storage";
+import { openInCodeSandbox } from "@/lib/open-in-codesandbox";
 import { BASE_DEPENDENCIES } from "@/lib/sandpack-setup";
+import { toast } from "sonner";
 import type { FileData, StatusStep } from "@/types/workspace";
 
 // ─── Placeholder ──────────────────────────────────────────────────────────────
@@ -62,6 +70,10 @@ const PLACEHOLDER_FILES = {
 
 type ActiveTab = "preview" | "code";
 
+export interface CodePanelHandle {
+  openPreviewInNewTab: () => Promise<void>;
+}
+
 interface CodePanelProps {
   fileData: FileData | null;
   isGenerating: boolean;
@@ -89,7 +101,7 @@ function SandpackInner({
   appTitle,
   isImproving,
   isProUser,
-  workspaceId,
+  openPreviewRef,
 }: {
   isGenerating: boolean;
   statusLog: StatusStep[];
@@ -101,11 +113,12 @@ function SandpackInner({
   appTitle: string | null;
   isImproving: boolean;
   isProUser: boolean;
-  workspaceId: string | null;
+  openPreviewRef: React.MutableRefObject<(() => Promise<void>) | null>;
 }) {
   const { sandpack, listen } = useSandpack();
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isOpeningPreview, setIsOpeningPreview] = useState(false);
   const [improveInput, setImproveInput] = useState("");
   const [showImproveInput, setShowImproveInput] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -167,6 +180,93 @@ function SandpackInner({
     setImproveInput("");
     setShowImproveInput(false);
     await onImprove(trimmed);
+  };
+
+  const improveInputRow = (
+    <div className="flex items-center gap-1.5">
+      <div className="relative flex min-w-0 flex-1 items-center">
+        <Bot className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-violet-400" />
+        <input
+          autoFocus
+          value={improveInput}
+          onChange={(e) => setImproveInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleImproveSubmit();
+            if (e.key === "Escape") setShowImproveInput(false);
+          }}
+          placeholder="What should I improve?"
+          className="h-7 w-full min-w-0 rounded-md border border-violet-500/30 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 pl-8 pr-3 text-xs text-white/80 placeholder:text-white/30 focus:border-violet-400/50 focus:outline-none focus:shadow-[0_0_10px_rgba(139,92,246,0.2)] lg:w-56 lg:flex-none"
+        />
+      </div>
+      <button
+        onClick={handleImproveSubmit}
+        disabled={!improveInput.trim() || isImproving}
+        className="group relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-violet-500/30 bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 text-violet-300 transition-all duration-200 hover:border-violet-400/50 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:shadow-[0_0_10px_rgba(139,92,246,0.3)] disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {isImproving ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <ArrowUp className="h-3 w-3" />
+        )}
+      </button>
+    </div>
+  );
+
+  const renderImproveAgent = (compact = false) => {
+    if (showImproveInput) {
+      return compact ? null : improveInputRow;
+    }
+
+    const buttonClassName = compact
+      ? "group relative flex h-7 shrink-0 cursor-pointer items-center gap-1 overflow-hidden rounded-md border border-white/10 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 px-2 text-[11px] font-medium transition-all duration-300 hover:border-white/20 hover:from-violet-500/20 hover:via-fuchsia-500/20 hover:to-cyan-500/20 hover:shadow-[0_0_12px_rgba(139,92,246,0.3)] disabled:cursor-not-allowed disabled:opacity-40"
+      : "group relative flex h-7 cursor-pointer items-center gap-1.5 overflow-hidden rounded-md border border-white/10 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 px-2.5 text-xs font-medium transition-all duration-300 hover:border-white/20 hover:from-violet-500/20 hover:via-fuchsia-500/20 hover:to-cyan-500/20 hover:shadow-[0_0_12px_rgba(139,92,246,0.3)] disabled:cursor-not-allowed disabled:opacity-40";
+
+    const label = isImproving ? "Improving…" : compact ? "Improve" : "Improve with Agent";
+
+    if (isProUser) {
+      return (
+        <button
+          onClick={() => setShowImproveInput(true)}
+          disabled={isImproving || !fileData}
+          className={buttonClassName}
+        >
+          <span className="pointer-events-none absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          {isImproving ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
+          ) : (
+            <Bot className="h-3.5 w-3.5 text-violet-400 transition-colors group-hover:text-violet-300" />
+          )}
+          <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
+            {label}
+          </span>
+          {!isImproving && (
+            <span className="rounded-sm bg-violet-500/30 px-1 py-0.5 text-[10px] font-semibold leading-none text-violet-300">
+              PRO
+            </span>
+          )}
+        </button>
+      );
+    }
+
+    return (
+      <PricingModal reason="upgrade">
+        <span
+          className={cn(
+            buttonClassName,
+            "text-white/60 hover:text-white/90"
+          )}
+        >
+          <span className="pointer-events-none absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          <Bot className="h-3.5 w-3.5 text-violet-400 transition-colors group-hover:text-violet-300" />
+          <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
+            {compact ? "Improve" : "Improve with Agent"}
+          </span>
+          <span className="rounded-sm bg-violet-500/30 px-1 py-0.5 text-[10px] font-semibold leading-none text-violet-300">
+            PRO
+          </span>
+        </span>
+      </PricingModal>
+    );
   };
 
   // ── Export to ZIP ──────────────────────────────────────────────────────────
@@ -269,33 +369,39 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
     }
   };
 
-  const handleOpenPreviewTab = () => {
-    if (!fileData) return;
+  const handleOpenPreviewTab = useCallback(async () => {
+    if (!fileData || isOpeningPreview) return;
 
-    const files: Record<string, { code: string }> = {};
-    for (const [path, fileObj] of Object.entries(sandpack.files)) {
-      const code =
+    const filesToPreview =
+      Object.keys(sandpack.files).length > 0
+        ? sandpack.files
+        : fileData.files;
+
+    const files: Record<string, string> = {};
+    for (const [path, fileObj] of Object.entries(filesToPreview)) {
+      files[path] =
         typeof fileObj === "object" && fileObj !== null && "code" in fileObj
           ? (fileObj as { code: string }).code
           : "";
-      files[path] = { code };
     }
 
-    writePreviewSnapshot({
-      files,
-      dependencies: fileData.dependencies,
-      title: appTitle ?? fileData.title,
-    });
+    setIsOpeningPreview(true);
+    try {
+      await openInCodeSandbox(files);
+    } catch (err) {
+      console.error("Failed to open CodeSandbox preview:", err);
+      toast.error("Could not open preview", {
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setIsOpeningPreview(false);
+    }
+  }, [fileData, isOpeningPreview, sandpack.files]);
 
-    const params = new URLSearchParams();
-    if (workspaceId) params.set("workspaceId", workspaceId);
-    const query = params.toString();
-    window.open(
-      query ? `/preview?${query}` : "/preview",
-      "_blank",
-      "noopener,noreferrer"
-    );
-  };
+  useEffect(() => {
+    openPreviewRef.current = handleOpenPreviewTab;
+  }, [handleOpenPreviewTab, openPreviewRef]);
 
   const currentStepLabel =
     statusLog[statusLog.length - 1]?.label ?? "Generating…";
@@ -307,110 +413,81 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
       className="flex h-full min-h-0 w-full flex-1 flex-col gap-0"
     >
       {/* Tabs + Actions bar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-white/6 px-2">
-        <TabsList
-          variant="line"
-          className="h-auto gap-0 rounded-none bg-transparent p-0"
-        >
-          <TabsTrigger className="border-b-2 pt-2" value="code">
-            <Code2 className="h-3.5 w-3.5" />
-            Code
-          </TabsTrigger>
-          <TabsTrigger className="border-b-2 pt-2" value="preview">
-            <Eye className="h-3.5 w-3.5" />
-            Preview
-          </TabsTrigger>
-        </TabsList>
+      <div className="flex shrink-0 flex-col border-b border-white/6">
+        <div className="flex items-center justify-between gap-1 px-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            <TabsList
+              variant="line"
+              className="h-auto shrink-0 gap-0 rounded-none bg-transparent p-0"
+            >
+              <TabsTrigger className="border-b-2 pt-2" value="code">
+                <Code2 className="h-3.5 w-3.5" />
+                Code
+              </TabsTrigger>
+              <TabsTrigger className="border-b-2 pt-2" value="preview">
+                <Eye className="h-3.5 w-3.5" />
+                Preview
+              </TabsTrigger>
+            </TabsList>
 
-        <div className="flex items-center gap-1.5">
-          {/* ── Improve button ── */}
-          {isProUser ? (
-            showImproveInput ? (
-              <div className="flex items-center gap-1.5">
-                <div className="relative flex items-center">
-                  <Bot className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-violet-400" />
-                  <input
-                    autoFocus
-                    value={improveInput}
-                    onChange={(e) => setImproveInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleImproveSubmit();
-                      if (e.key === "Escape") setShowImproveInput(false);
-                    }}
-                    placeholder="What should I improve?"
-                    className="h-7 w-56 rounded-md border border-violet-500/30 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 pl-8 pr-3 text-xs text-white/80 placeholder:text-white/30 focus:border-violet-400/50 focus:outline-none focus:shadow-[0_0_10px_rgba(139,92,246,0.2)]"
-                  />
-                </div>
-                <button
-                  onClick={handleImproveSubmit}
-                  disabled={!improveInput.trim() || isImproving}
-                  className="group relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-md border border-violet-500/30 bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 text-violet-300 transition-all duration-200 hover:border-violet-400/50 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:shadow-[0_0_10px_rgba(139,92,246,0.3)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isImproving ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <ArrowUp className="h-3 w-3" />
-                  )}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowImproveInput(true)}
-                disabled={isImproving || !fileData}
-                className="group relative flex h-7 cursor-pointer items-center gap-1.5 overflow-hidden rounded-md border border-white/10 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 px-2.5 text-xs font-medium transition-all duration-300 hover:border-white/20 hover:from-violet-500/20 hover:via-fuchsia-500/20 hover:to-cyan-500/20 hover:shadow-[0_0_12px_rgba(139,92,246,0.3)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <span className="pointer-events-none absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-                {isImproving ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400" />
-                ) : (
-                  <Bot className="h-3.5 w-3.5 text-violet-400 transition-colors group-hover:text-violet-300" />
-                )}
-                <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
-                  {isImproving ? "Improving…" : "Improve with Agent"}
-                </span>
-                {!isImproving && (
-                  <span className="rounded-sm bg-violet-500/30 px-1 py-0.5 text-[10px] font-semibold leading-none text-violet-300">
-                    PRO
-                  </span>
-                )}
-              </button>
-            )
-          ) : (
-            <PricingModal reason="upgrade">
-              <span className="group relative flex h-7 cursor-pointer items-center gap-1.5 overflow-hidden rounded-md border border-white/10 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 px-2.5 text-xs font-medium text-white/60 transition-all duration-300 hover:border-white/20 hover:from-violet-500/20 hover:via-fuchsia-500/20 hover:to-cyan-500/20 hover:text-white/90 hover:shadow-[0_0_12px_rgba(139,92,246,0.3)]">
-                <span className="pointer-events-none absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-                <Bot className="h-3.5 w-3.5 text-violet-400 transition-colors group-hover:text-violet-300" />
-                <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
-                  Improve with Agent
-                </span>
-                <span className="rounded-sm bg-violet-500/30 px-1 py-0.5 text-[10px] font-semibold leading-none text-violet-300">
-                  PRO
-                </span>
-              </span>
-            </PricingModal>
-          )}
+            <div className="shrink-0 lg:hidden">{renderImproveAgent(true)}</div>
+          </div>
+
+          <div className="hidden items-center gap-1.5 lg:flex">
+            {showImproveInput ? improveInputRow : renderImproveAgent()}
+
+            <Button
+              variant="ghost"
+              onClick={handleOpenPreviewTab}
+              disabled={
+                !fileData || isGenerating || isImproving || isOpeningPreview
+              }
+              title="Open preview in new tab"
+            >
+              {isOpeningPreview ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ExternalLink className="h-3.5 w-3.5" />
+              )}
+              Preview
+            </Button>
+
+            <Button
+              onClick={handleExportZip}
+              disabled={isExporting || !fileData}
+            >
+              {isExporting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Download
+            </Button>
+          </div>
 
           <Button
             variant="ghost"
+            className="shrink-0 lg:hidden"
             onClick={handleOpenPreviewTab}
-            disabled={!fileData || isGenerating || isImproving}
+            disabled={
+              !fileData || isGenerating || isImproving || isOpeningPreview
+            }
             title="Open preview in new tab"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open
-          </Button>
-
-          <Button
-            disabled={isExporting || !fileData}
-          >
-            {isExporting ? (
+            {isOpeningPreview ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Download className="h-3.5 w-3.5" />
+              <ExternalLink className="h-3.5 w-3.5" />
             )}
-            Download
+            Open
           </Button>
         </div>
+
+        {showImproveInput && (
+          <div className="border-t border-white/6 px-2 py-1.5 lg:hidden">
+            {improveInputRow}
+          </div>
+        )}
       </div>
 
       {/* Content area — must flex-1 so preview fills remaining height */}
@@ -493,19 +570,30 @@ root.render(<React.StrictMode><App /></React.StrictMode>);`
 
 // ─── CodePanel (outer) ────────────────────────────────────────────────────────
 
-export function CodePanel({
-  fileData,
-  isGenerating,
-  statusLog,
-  onImprove,
-  onFixError,
-  onFilePatch: _onFilePatch,
-  appTitle,
-  isImproving,
-  isProUser,
-  workspaceId,
-}: CodePanelProps) {
+export const CodePanel = forwardRef<CodePanelHandle, CodePanelProps>(
+  function CodePanel(
+    {
+      fileData,
+      isGenerating,
+      statusLog,
+      onImprove,
+      onFixError,
+      onFilePatch: _onFilePatch,
+      appTitle,
+      isImproving,
+      isProUser,
+      workspaceId: _workspaceId,
+    },
+    ref
+  ) {
+  const openPreviewRef = useRef<(() => Promise<void>) | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>("preview");
+
+  useImperativeHandle(ref, () => ({
+    openPreviewInNewTab: async () => {
+      await openPreviewRef.current?.();
+    },
+  }));
 
   useEffect(() => {
     if (fileData) setActiveTab("preview");
@@ -548,9 +636,9 @@ export function CodePanel({
           appTitle={appTitle}
           isImproving={isImproving}
           isProUser={isProUser}
-          workspaceId={workspaceId}
+          openPreviewRef={openPreviewRef}
         />
       </SandpackProvider>
     </div>
   );
-}
+});
