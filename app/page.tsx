@@ -66,8 +66,16 @@ export default function LandingPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#E4F2FA] via-white to-[#FFE8D6] selection:bg-orange-200/40">
-      {/* ── HERO ──────────────────────────────────────────────────────────── */}
+      {/* ── HERO ──────────────────────────────────────────────────────────*/}
       <section className="relative flex flex-col items-center px-4 pb-24 pt-32 text-center sm:pt-36">
+        <div className="mb-8">
+          <h1 className="text-4xl font-serif font-bold tracking-tight text-neutral-900 sm:text-5xl">
+            <span className="bg-linear-to-br from-[#FF8A4C] via-[#FF6B2C] to-[#E85A1A] bg-clip-text text-transparent">
+              Dreamera
+            </span>
+          </h1>
+        </div>
+
         <Badge
           variant="outline"
           className="z-10 gap-2 border-neutral-200 bg-white/80 p-4 text-neutral-600 backdrop-blur-sm"
@@ -77,7 +85,7 @@ export default function LandingPage() {
         </Badge>
 
         <h1 className="z-10 mx-auto mt-6 max-w-3xl text-balance font-serif text-5xl leading-tight tracking-tight text-neutral-900 sm:text-6xl lg:text-7xl">
-          <span className="text-neutral-900">Dreamera your dream</span>
+          <span className="text-neutral-900">Your dream</span>
           <br />
           <span className="bg-linear-to-br from-[#FF8A4C] via-[#FF6B2C] to-[#E85A1A] bg-clip-text font-serif text-transparent">
             from a single prompt.
@@ -116,7 +124,7 @@ export default function LandingPage() {
                 <select
                   value={generationModelId}
                   onChange={(e) => setGenerationModelId(e.target.value)}
-                  className="h-7 max-w-[150px] shrink-0 truncate rounded-lg border border-neutral-200 bg-neutral-50 px-2 text-[11px] text-neutral-600 outline-none transition-colors hover:border-neutral-300 focus:border-neutral-400 sm:max-w-[170px]"
+                  className="h-7 max-w-[150px] shrink-0 truncate rounded-lg border border-neutral-200 bg-neutral-50 px-2 text-[11px] text-neutral-600 outline-none transition-colors hover:border-neutral-300"
                   aria-label="Generation model"
                 >
                   {GENERATION_MODELS.map((model) => (
@@ -554,7 +562,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── CTA ───────────────────────────────────────────────────────────── */}
+      {/* ── CTA ──────────────────────────────────────────────────────────*/}
       <section className="relative mx-4 mb-32 overflow-hidden rounded-3xl border border-neutral-200 bg-white px-10 py-24 text-center shadow-lg shadow-neutral-200/50 sm:mx-auto sm:max-w-5xl">
         <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-black">
           Start building,
